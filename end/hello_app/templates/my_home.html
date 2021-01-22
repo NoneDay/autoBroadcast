@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    <meta charset="utf-8" />
+    <script type="text/javascript" src="/static/vue.js"></script> 
+    <script src="/static/axios.min.js"></script>     
+    <!-- 引入样式 -->
+    <link rel="stylesheet" href="/static/element-ui-index.css">
+    <!-- 引入组件库 -->
+    <script src="/static/element-ui-index.js"></script>
+
+    <!-- 引入样式 -->
+    <link rel="stylesheet" href="/static/vxe-table-index.css">
+    <!-- 引入脚本 -->
+    <script src="/static/xe-utils.js"></script>
+    <script src="/static/vxe-table-index.min.js"></script>
+    <style type="text/css">
+        .dataframe tbody tr th:only-of-type {vertical-align: middle;}
+        .dataframe tbody tr th {vertical-align: top;}
+        .dataframe thead th {text-align: right;}
+        .dataframe td {border:none}    
+        .dataframe th {border:none}
+        .el-tabs__new-tab {background-color: #42b142;}
+    </style>
+
+    <STYLE type="text/css">
+      .el-header, .el-footer {background-color: #B3C0D1;color: #333;text-align: center;}
+      .el-aside {background-color: #D3DCE6;color: #333;text-align: center;}
+      .el-main {background-color: #E9EEF3;color: #333;text-align: center;}
+      body > .el-container {margin-bottom: 40px;}
+      .el-tabs__item.is-active {background-color: rgb(119, 221, 141);color: rgb(83, 65, 65);}
+      .el-tabs__header {
+    padding: 0;
+    position: relative;
+    margin: 0 0 1px;
+}
+    </STYLE>
+    </head>
+    <body >
+        <div id="app">
+            <el-container >
+                <el-header>
+                    {{ userInfo.username }}
+                    <el-button type="primary" @click="logout">退出</el-button>
+                    ${ message }
+                </el-header>
+                <el-container >
+                <el-aside width="200px">
+                    <div class="nav-list">
+                        <el-row class="tac">
+                          <el-col>
+                              <el-tree :data="reportList"  @node-click="handleNodeClick" node-key='id' label='report_name'></el-tree>
+                          </el-col>
+                        </el-row>
+                        
+                      </div>                    
+                </el-aside>
+                    <el-main >
+                        <el-tabs v-model="editableTabsValue" type="card" editable @edit="handleTabsEdit" style="height:100%;width:100%">
+                            <el-tab-pane :key="item.name" v-for="(item, index) in editableTabs" :label="item.title" :name="item.name">
+                              <div  style="height:800px;overflow-y:hidden;overflow-x:hidden;" >
+                                  <iframe  width="100%" height="100%" :src="item.content"></iframe>
+                              </div>
+                            </el-tab-pane>
+                        </el-tabs>
+                    </el-main>
+            </el-container>
+          </el-container>
+        </div>
+    </body>
+</html>
+<script type="text/javascript">
+  url_prefix="{{url_prefix}}"
+ 
+  axios.get(url_prefix+'/ReportDefine/list')
+    .then(function(response){
+      app.$data.reportList=response.data
+    })    
+var app = new Vue({
+    el: '#app',
+    data:{
+        reportList:[], 
+        message:'',
+        editableTabsValue: 'welcome',
+        editableTabs: [
+            { title: '欢迎使用',name: 'welcome',closable:false, content: 'xxxx' }
+          ],
+        tabIndex: 2
+      },
+      delimiters:['${', '}'],
+      methods: {//this.$refs[value][0].contentWindow.location.reload()
+        logout(){
+          axios.get(url_prefix+'/logout')
+            .then(function(response){
+              window.location="/"
+            }) 
+        },
+      handleNodeClick(data) {
+        let tabs = this.editableTabs;
+        if(tabs.filter(tab => tab.title == data.label).length==0){
+          let newTabName = ++this.tabIndex + '';
+          this.editableTabs.push({
+            title: data.label,
+            name: newTabName,
+            content: url_prefix+'/ReportDefine/edit/'+data.id
+          })
+          this.editableTabsValue = newTabName;
+        }
+      },        
+      handleTabsEdit(targetName, action) {
+        if (action === 'add') {
+          let newTabName = ++this.tabIndex + '';
+          this.editableTabs.push({
+            title: 'New Tab',
+            name: newTabName,
+            content: url_prefix+'/ReportDefine/edit/0'
+          });
+          this.editableTabsValue = newTabName;
+        }
+        if (action === 'remove') {
+          let tabs = this.editableTabs;
+          let activeName = this.editableTabsValue;
+          if('welcome'==targetName)
+            return  
+          if (activeName === targetName) {
+            tabs.forEach((tab, index) => {
+              if (tab.name === targetName) {
+                let nextTab = tabs[index + 1] || tabs[index - 1];
+                if (nextTab) {
+                  activeName = nextTab.name;
+                }
+              }
+            });
+          }          
+          this.editableTabsValue = activeName;
+          this.editableTabs = tabs.filter(tab => tab.name !== targetName);
+        }
+      }
+    }
+});
+
+</script>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <script type="text/javascript" src="/static/vue.js"></script> 
+        <script src="/static/axios.min.js"></script>     
+        <!-- 引入样式 -->
+        <link rel="stylesheet" href="/static/element-ui-index.css">
+        <!-- 引入组件库 -->
+        <script src="/static/element-ui-index.js"></script>
+
+        <!-- 引入样式 -->
+        <link rel="stylesheet" href="/static/vxe-table-index.css">
+        <!-- 引入脚本 -->
+        <script src="/static/xe-utils.js"></script>
+        <script src="/static/vxe-table-index.min.js"></script>
+        
+        <script src="/static/Sortable.js"></script>
+        <script src="/static/linq.min.js"></script>
+        <style type="text/css">
+            .el-tabs__new-tab {background-color: #42b142;}
+            .dataframe  {width:100%;border-collapse:collapse;empty-cells:show;margin-bottom:16px;display:block;overflow:auto;border-spacing:0}
+            .dataframe  tr{background-color:#fff;border-top:1px solid #c6cbd1}
+            .dataframe  td,.vditor-reset table th{padding:6px 13px;border:1px solid #dfe2e5;word-break:normal}
+            .dataframe  th{font-weight:600}.dataframe tbody tr:nth-child(2n){background-color:#f6f8fa}            
+        </style>
+    
+        <STYLE type="text/css">
+      .el-header, .el-footer {background-color: #B3C0D1;color: #333;text-align: center;}
+      .el-aside {background-color: #D3DCE6;color: #333;text-align: center;}
+      .el-main {background-color: #E9EEF3;color: #333;text-align: center;}
+      body > .el-container {margin-bottom: 40px;}
+      .el-form-item {margin-bottom: 4px;}
+      .el-tabs__item.is-active {background-color: rgb(119, 221, 141);color: rgb(83, 65, 65);}
+      .el-tabs__header {    padding: 0;position: relative;margin: 0 0 1px;}
+      .sortable-row-demo .drag-btn {
+          cursor: move;
+          font-size: 12px;
+        }
+        .sortable-row-demo .vxe-body--row.sortable-ghost,
+        .sortable-row-demo .vxe-body--row.sortable-chosen {
+          background-color: #dfecfb;
+        }
+    </STYLE>
+    </head>
+    <body >
+        <div id="app" >
+            <el-form ref="query_form"  label-width="180px" style="width: 600px;">
+            <el-form-item label="标题">
+                <el-input v-model="define.title"></el-input>
+            </el-form-item>
+            <el-form-item label="填报日期">
+                <el-col :span="11">
+                    <el-date-picker type="date" placeholder="选择日期" v-model="define.start_date" style="width: 100%;"></el-date-picker>
+                </el-col>
+                <el-col class="line" :span="2">-</el-col>
+                <el-col :span="11">
+                    <el-date-picker type="date" placeholder="选择日期" v-model="define.end_date" style="width: 100%;"></el-date-picker>
+                </el-col>
+            </el-form-item> 
+            <el-form-item label="填报类型">
+                <el-checkbox-group v-model="define.rpt_type">
+                    <el-checkbox  label="机构代码" name="rpt_type"></el-checkbox >
+                    <el-checkbox label="工号" name="rpt_type"></el-checkbox>
+                    <el-checkbox label="填写日期" name="rpt_type"></el-checkbox>
+                  </el-checkbox-group>                
+            </el-form-item>
+            </el-form>
+
+            <span style="color: red;"> ${ message } </span><br>
+
+            <vxe-toolbar>
+                <template v-slot:buttons>
+                  <vxe-button @click="insertEvent(-1)">在最后行插入</vxe-button>
+                  <vxe-button @click="$refs.xTable1.removeSelecteds()">删除选中</vxe-button>
+                  <vxe-button @click="saveDefine()">保存</vxe-button>
+                </template>
+              </vxe-toolbar>
+
+            <vxe-table border ref="xTable1" row-key class="sortable-row-demo" :data="define.rpt_content"
+            :edit-config="{trigger: 'click', mode: 'cell',activeMethod: activeCellMethod}" 
+            @edit-closed="edit_cell_closed"
+            >
+            <vxe-table-column type="checkbox" width="60"></vxe-table-column>  
+                <vxe-table-column width="60">
+                <template>
+                    <span class="drag-btn">
+                    <i class="vxe-icon--menu"></i>
+                    </span>
+                </template>
+                <template v-slot:header>
+                    <vxe-tooltip v-model="showHelpTip1" content="按住后可以上下拖动排序！" enterable>
+                    <i class="vxe-icon--question" @click="showHelpTip1 = !showHelpTip1"></i>
+                    </vxe-tooltip>
+                </template>
+                </vxe-table-column>
+              
+                <vxe-table-column field="name" title="名称" :edit-render="{name: 'input', attrs: {type: 'text'}}"></vxe-table-column>
+                <vxe-table-column field="type" title="类型" :edit-render="{name: 'select', options: typeList}"></vxe-table-column>></vxe-table-column>
+                <vxe-table-column field="formula" title="计算公式" :edit-render="{name: 'input', attrs: {type: 'text'}}"></vxe-table-column>
+                <vxe-table-column field="juhe_type" title="聚合类型" :edit-render="{name: 'select', options: aggrList}" show-overflow></vxe-table-column>
+            </vxe-table>
+</div>
+</body>
+</html>
+<script type="text/javascript">
+    url_prefix="{{url_prefix}}"
+    var None=null
+    var app = new Vue({
+    el: '#app',
+    data:{
+        showHelpTip1: false,
+
+        typeList: [
+            {label: '整数',value: 'int',disabled: false},                
+            {label: '浮点数',value: 'decimal(12,2)',disabled: false},                
+            {label: '文本',value: 'nvarchar(max)',disabled: false},                
+            {label: '计算类型',value: 'calc',disabled: false},                
+              ],
+        aggrList: [
+              {label: '',value: '',disabled: false},{label: '求和',value: 'sum',disabled: false},
+            {label: '最大',value: 'max',disabled: false},{label: '计数',value: 'count',disabled: false},
+              ],              
+
+        branch_grants_tableColumn:[
+            { type: 'radio', width: 50 },
+            { field: 'branch_no', title: '机构代码', width: 150 },
+            { field: 'branch_name', title: '机构名称', width: 150 },
+            { field: 'worker_no', title: '填报人员工号', width: 150, editRender: { name: 'input' } },
+        ],
+        branch_grants:{{ branch_grants |safe}},
+        branch_grants_visible:false,
+
+        define:{{t_json|safe}},
+
+        query_result:{ret_df_detail:{columns:[],data:[]},ret_df_hz:{columns:[],data:[]}},
+        message:'',
+        editableTabsValue: 'welcome',
+        editableTabs: [
+            { title: '欢迎使用',name: 'welcome',closable:false, content: 'xxxx' }
+          ],
+        tabIndex: 2
+      },
+      delimiters:['${', '}'],
+      created () {
+            this.rowDrop()
+          },
+          beforeDestroy () {
+            if (this.sortable) {
+              this.sortable.destroy()
+            }
+          },      
+      methods: {
+        activeCellMethod ({ row, rowIndex, column, columnIndex }) {
+            if(row.type!='calc' && column.property=="formula")
+                return false;
+            else 
+                return true;
+        }  ,
+        edit_cell_closed({row,rowIndex,$rowIndex,column,columnIndex,$columnIndex,cell}){
+
+        },
+        async insertEvent (row) {
+            let record = {
+            type: 'int'
+            }
+            let { row: newRow } = await this.$refs.xTable1.insertAt(record, row)
+            
+        },
+        saveDefine(){
+            old_this=this
+            this.define.rpt_content=this.$refs.xTable1.$data.tableData          
+            axios.post(url_prefix+"/save_tianbao_define",{content:this.define})
+            .then(function(response){
+                if(response.data.errcode==0){
+                    old_this.define.id=response.data.id
+                    alert("保存成功！")
+                }
+                else
+                    old_this.message=response.data.errmsg
+            });
+        },
+        rowDrop () {
+            this.$nextTick(() => {
+            let xTable = this.$refs.xTable1
+            this.sortable = Sortable.create(xTable.$el.querySelector('.body--wrapper>.vxe-table--body tbody'), {
+                handle: '.drag-btn',
+                onEnd: ({ newIndex, oldIndex }) => {
+                let currRow = this.define.rpt_content.splice(oldIndex, 1)[0]
+                this.define.rpt_content.splice(newIndex, 0, currRow)
+                }
+            })
+            })
+        }
+                  
+    }
+});
+
+</script>

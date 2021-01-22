@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <script type="text/javascript" src="/static/vue.js"></script> 
+        <script src="/static/axios.min.js"></script>     
+        <!-- 引入样式 -->
+        <link rel="stylesheet" href="/static/element-ui-index.css">
+        <!-- 引入组件库 -->
+        <script src="/static/element-ui-index.js"></script>
+
+        <!-- 引入样式 -->
+        <link rel="stylesheet" href="/static/vxe-table-index.css">
+        <!-- 引入脚本 -->
+        <script src="/static/xe-utils.js"></script>
+        <script src="/static/vxe-table-index.min.js"></script>
+        
+        <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/handsontable@latest/dist/handsontable.full.min.css">
+        <link rel="stylesheet" type="text/css" href="https://handsontable.com/static/css/main.css">
+        <script src="https://cdn.jsdelivr.net/npm/handsontable@latest/dist/handsontable.full.min.js"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/handsontable@latest/dist/languages/zh-CN.js"></script>
+        <script src="/static/linq.min.js"></script>
+
+        <style type="text/css">
+            .el-tabs__new-tab {background-color: #42b142;}
+            .dataframe  {width:100%;border-collapse:collapse;empty-cells:show;margin-bottom:16px;display:block;overflow:auto;border-spacing:0}
+            .dataframe  tr{background-color:#fff;border-top:1px solid #c6cbd1}
+            .dataframe  td,.vditor-reset table th{padding:6px 13px;border:1px solid #dfe2e5;word-break:normal}
+            .dataframe  th{font-weight:600}.dataframe tbody tr:nth-child(2n){background-color:#f6f8fa}            
+        </style>
+    
+        <STYLE type="text/css">
+      .el-header, .el-footer {background-color: #B3C0D1;color: #333;text-align: center;}
+      .el-aside {background-color: #D3DCE6;color: #333;text-align: center;}
+      .el-main {background-color: #E9EEF3;color: #333;text-align: center;}
+      body > .el-container {margin-bottom: 40px;}
+      .el-form-item {margin-bottom: 4px;}
+      .el-tabs__item.is-active {background-color: rgb(119, 221, 141);color: rgb(83, 65, 65);}
+      .el-tabs__header {
+    padding: 0;
+    position: relative;
+    margin: 0 0 1px;
+}
+    </STYLE>
+    </head>
+    <body >
+        
+        <div id="app" >        
+        {{t_json['title'] }}
+        <hr/>
+        <br>开始填报日期：{{t_json['start_date'] }} --结束填报日期：{{t_json['end_date'] }} 
+        --当前机构：<span style="color: red;">{{workForbranch['branch_name']}}({{workForbranch['branch_no']}} )</span> 
+        <br>填报类型：{{t_json['rpt_type_name'] }} 
+        <br>当前时间： {{date }}
+       
+        <hr/>
+        <span style="color: red;"> ${ message } </span><br>
+
+        <el-button style="float: right;" v-if="branch_grants.length>0" v-on:click='branch_grants_visible=true' type="primary">
+            指定对机构的负责人(现有${branch_grants.length}个下属机构)
+        </el-button>
+        <el-dialog :visible.sync="branch_grants_visible" title="指定对机构的负责人" :close-on-click-modal='false'>
+        <vxe-grid border resizable height="250" :data.sync="branch_grants" :columns="branch_grants_tableColumn"
+            :edit-config="{trigger: 'click', mode: 'row', showStatus: true}">
+        </vxe-grid>
+        <div slot="footer" class="dialog-footer">
+            <el-button @click="branch_grants_visible = false">取 消</el-button>
+            <el-button type="primary" @click="branch_grants_dialog_submit">确 定</el-button>
+            </div>        
+        </el-dialog> 
+        <el-form ref="tb_form"  label-width="180px" style="width: 600px;">
+            
+            <el-button type="primary" @click="submit_tianbao_content">提交</el-button>
+        </el-form>
+
+
+</div> <div id="hotContent"></div>
+</body>
+</html>
+<script type="text/javascript">
+    None=null;
+    rpt_define={{ t_json['rpt_content']|safe}}
+    function Decimal(v){
+        return Number(v)
+    }
+    url_prefix="{{url_prefix}}"
+    var app = new Vue({
+    el: '#app',
+    data:{
+        branch_grants_tableColumn:[
+            { type: 'radio', width: 50 },
+            { field: 'branch_no', title: '机构代码', width: 150 },
+            { field: 'branch_name', title: '机构名称', width: 150 },
+            { field: 'worker_no', title: '填报人员工号', width: 150, editRender: { name: 'input' } },
+        ],
+        branch_grants:{{ branch_grants |safe}},
+        branch_grants_visible:false,
+        
+        query_form:{
+            branch_no:'{{param['branch_no']}}',
+            rpt_id:{{param['rpt_id']}},
+            b_date:'{{param['b_date']}}',
+            e_date:'{{param['e_date']}}'
+        },
+        query_result:{ret_df_detail:{columns:[],data:[]},ret_df_hz:{columns:[],data:[]}},
+        message:'',
+        editableTabsValue: 'welcome',
+        editableTabs: [
+            { title: '欢迎使用',name: 'welcome',closable:false, content: 'xxxx' }
+          ],
+        tabIndex: 2
+      },
+      delimiters:['${', '}'],
+      methods: {//this.$refs[value][0].contentWindow.location.reload()
+        logout(){
+          axios.get(url_prefix+'/logout')
+            .then(function(response){
+              window.location="/"
+            }) 
+        },
+        branch_grants_dialog_submit(){
+            old_this=this
+            let params = new URLSearchParams();
+            for(var key in this.branch_grants){
+                params.append(key,this.branch_grants[key])
+            }
+            axios.post(url_prefix+"/submit_branch_grants",{content:this.branch_grants
+            ,rpt_id:{{t_json['id'] }}
+            }).then(function(response){
+                if(response.data.errcode==0)
+                    alert("填写成功！")
+                else
+                    old_this.message=response.data.errmsg
+                old_this.branch_grants_visible=false
+            });
+        },
+        queryData(){
+            old_this=this
+            let params = new URLSearchParams();
+            for(var key in this.query_form){
+                params.append(key,this.query_form[key])
+            }
+            axios.post(url_prefix+"/queryData",this.query_form)
+            .then(function(response){
+                if(response.data.errcode==0){
+                    old_this.query_result=response.data.data
+                    alert("查询成功！")
+                }
+                else
+                    old_this.message=response.data.errmsg
+            });
+        },
+        submit_tianbao_content(){
+            old_this=this
+            old_this.message=""
+            axios.post(url_prefix+"/submit_tianbao_content",{content:JSON.stringify(defineHotSettings.data)
+            ,rpt_id:{{t_json['id'] }}
+            }).then(function(response){
+                if(response.data.errcode==0)
+                    alert("填写成功！")
+                else
+                    old_this.message=response.data.errmsg
+            });
+        }
+    }
+});
+function calcRenderer(instance, td, row, col, prop, value, cellProperties) {
+  var escaped = Handsontable.helper.stringify(value);
+  var stats=Enumerable.From(instance.getColHeader()).Select(
+      function(x){
+        var t=instance.getDataAtRowProp(row,x)
+        if(typeof(t)=="string")
+          t=t.replace(/\n/g,'\\n')
+          if(typeof(t)=="string")
+            t='"'+t+'"'
+        return 'var '+x +'=' +t +';'
+      }
+    ).ToArray().join('\n')
+  var calc_formula=Enumerable.From(defineHotSettings.columns).Where(x=>x.data==prop).Select(x=>x.formula).ToArray()[0]
+  var result=eval("(function(){" + stats+" return "+calc_formula +"})()")
+  //instance.setDataAtCell(row, col,result)
+  td.innerHTML = result;
+  td.style="background-color: beige"
+  return td;
+}
+defineObject=JSON.parse( JSON.stringify(rpt_define)
+  .replace(/"name"(\b)*:/g,'"data":')
+  .replace(/"type"(\b)*:(\b)*"int"/g,'"type": "numeric","numericFormat": {"pattern": "0"}')
+  .replace(/"type"(\b)*:(\b)*"decimal\(12,2\)"/g,'"type": "numeric","numericFormat": {"pattern": "0.00"}')
+  .replace(/"type"(\b)*:(\b)*"nvarchar\(max\)"/g,'"type": "text"')
+  .replace(/"type"(\b)*:(\b)*"calc"/g,'"readOnly": true')
+)
+Enumerable.From(defineObject).Where("x=>x.readOnly==true").ForEach(function(value, index){value.renderer=calcRenderer })
+defineHotSettings={
+  data:{{curr_data|safe}},
+  columns:defineObject,
+  colHeaders: Enumerable.From(rpt_define).Select(x=>x.name).ToArray(),
+  width: Enumerable.From(rpt_define).Select(x=>x.name).ToArray().length*140,
+  /*columnSummary:Enumerable.From(defineObject).Select(function(value, index){
+        if(value.juhe_type){
+        return {destinationRow: 0, destinationColumn:index, reversedRowCoords: true,type: value.juhe_type,forceNumeric: true};   
+        }else return {};
+ }).Where(x=>x.type).ToArray(),*/
+  stretchH: 'all',language:'zh-CN',autoWrapRow: true,height: 487,maxRows:{{t_json.maxRows}},minRows: {{t_json.minRows}},
+  manualRowResize: true,manualColumnResize: true,rowHeaders: true,
+  manualRowMove: true,manualColumnMove: true,contextMenu: true,filters: true,dropdownMenu: true,
+  licenseKey: 'non-commercial-and-evaluation'
+}
+hotContent = new Handsontable(document.querySelector('#hotContent'), defineHotSettings); 
+
+</script>

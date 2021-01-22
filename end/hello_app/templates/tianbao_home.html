@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <script type="text/javascript" src="/static/vue.js"></script> 
+        <script src="/static/axios.min.js"></script>     
+        <!-- 引入样式 -->
+        <link rel="stylesheet" href="/static/element-ui-index.css">
+        <!-- 引入组件库 -->
+        <script src="/static/element-ui-index.js"></script>
+
+        <!-- 引入样式 -->
+        <link rel="stylesheet" href="/static/vxe-table-index.css">
+        <!-- 引入脚本 -->
+        <script src="/static/xe-utils.js"></script>
+        <script src="/static/vxe-table-index.min.js"></script>
+
+        <style type="text/css">
+            .el-tabs__new-tab {background-color: #42b142;}
+            .dataframe  {width:100%;border-collapse:collapse;empty-cells:show;margin-bottom:16px;display:block;overflow:auto;border-spacing:0}
+            .dataframe  tr{background-color:#fff;border-top:1px solid #c6cbd1}
+            .dataframe  td,.vditor-reset table th{padding:6px 13px;border:1px solid #dfe2e5;word-break:normal}
+            .dataframe  th{font-weight:600}.dataframe tbody tr:nth-child(2n){background-color:#f6f8fa}            
+        </style>
+    
+        <STYLE type="text/css">
+      .el-header, .el-footer {background-color: #B3C0D1;color: #333;text-align: center;}
+      .el-aside {background-color: #D3DCE6;color: #333;text-align: center;}
+      .el-main {background-color: #E9EEF3;color: #333;text-align: center;}
+      body > .el-container {margin-bottom: 40px;}
+      .el-form-item {margin-bottom: 4px;}
+      .el-tabs__item.is-active {background-color: rgb(119, 221, 141);color: rgb(83, 65, 65);}
+      .el-tabs__header {
+    padding: 0;
+    position: relative;
+    margin: 0 0 1px;
+}
+    </STYLE>
+    </head>
+    <body >
+        
+        <div id="app" >        
+        {{t_json['title'] }}
+        <hr/>
+        <br>开始填报日期：{{t_json['start_date'] }} --结束填报日期：{{t_json['end_date'] }} --当前机构代码：{{param['branch_no']}}
+        <br>填报类型：{{t_json['rpt_type_name'] }} 
+        <br>当前时间： {{date }}
+       
+        <hr/>
+        <span style="color: red;"> ${ message } </span><br>
+        <el-tabs >
+            <el-tab-pane label="填报录入" >
+        
+                <el-button style="float: right;" v-if="branch_grants.length>0" v-on:click='branch_grants_visible=true' type="primary">
+                    指定对机构的负责人(现有${branch_grants.length}个下属机构)
+                </el-button>
+                <el-dialog :visible.sync="branch_grants_visible" title="指定对机构的负责人" :close-on-click-modal='false'>
+                <vxe-grid border resizable height="250" :data.sync="branch_grants" :columns="branch_grants_tableColumn"
+                    :edit-config="{trigger: 'click', mode: 'row', showStatus: true}">
+                </vxe-grid>
+                <div slot="footer" class="dialog-footer">
+                    <el-button @click="branch_grants_visible = false">取 消</el-button>
+                    <el-button type="primary" @click="branch_grants_dialog_submit">确 定</el-button>
+                  </div>        
+                </el-dialog> 
+                <el-form ref="tb_form"  label-width="180px" style="width: 600px;">
+                    {% for one in t_json['rpt_content']%}
+                <el-form-item label="{{one.name}}">
+                    {%if one.type=='int' %}
+                        <el-input type="number" v-model.number="{{one.name}}"></el-input>
+                    {%elif one.type=='decimal(12,2)' %}
+                        <el-input type="number" v-model.number="{{one.name}}"></el-input>
+                    {%elif one.type=='nvarchar(max)' %}
+                        <el-input type="textarea" v-model="{{one.name}}"></el-input>
+                    {%elif one.type=='calc' %}
+                    <el-col :span="11">${ {{one.formula}} }</el-col> 
+                    <el-col :span="11">({{one.formula}}) </el-col> 
+                    {%endif%}
+                </el-form-item>
+            {% endfor%}
+            <el-button type="primary" @click="submit_tianbao_content">提交</el-button>
+        </el-form>
+            </el-tab-pane>
+            <el-tab-pane label="填报查询  " >
+
+                <el-form ref="query_form" :model="query_form" label-width="180px" style="width: 600px;">
+                    <el-form-item label="活动名称">
+                        <el-input v-model="query_form.branch_no"></el-input>
+                    </el-form-item>
+                    <el-form-item label="活动时间">
+                        <el-col :span="11">
+                            <el-date-picker type="date" placeholder="选择日期" v-model="query_form.b_date" style="width: 100%;"></el-date-picker>
+                        </el-col>
+                        <el-col class="line" :span="2">-</el-col>
+                        <el-col :span="11">
+                            <el-date-picker type="date" placeholder="选择日期" v-model="query_form.e_date" style="width: 100%;"></el-date-picker>
+                        </el-col>
+                    </el-form-item>        
+                    <el-form-item>
+                        <el-button type="primary" @click="queryData">查询</el-button>
+                        <el-button>取消</el-button>
+                    </el-form-item>        
+                </el-form>
+                <table border="1" class="dataframe">
+                        <thead>
+                          <tr style="text-align: middle;">
+                                <th v-for="item in query_result.ret_df_hz.columns">${item}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                            <tr  v-for="one_tr in query_result.ret_df_hz.data">
+                                <td  v-for="item in one_tr">${item}</td>
+                            </tr>
+                        </tbody>
+                </table>    
+                <table border="1" class="dataframe">
+                        <thead>
+                          <tr style="text-align: middle;">
+                                <th v-for="item in query_result.ret_df_detail.columns">${item}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                            <tr  v-for="one_tr in query_result.ret_df_detail.data">
+                                <td  v-for="item in one_tr">${item}</td>
+                            </tr>
+                        </tbody>
+                </table>                       
+            </el-tab-pane>
+        </el-tabs>
+
+
+</div>
+</body>
+</html>
+<script type="text/javascript">
+    None=null;
+    url_prefix="{{url_prefix}}"
+    var app = new Vue({
+    el: '#app',
+    data:{
+        branch_grants_tableColumn:[
+            { type: 'radio', width: 50 },
+            { field: 'branch_no', title: '机构代码', width: 150 },
+            { field: 'branch_name', title: '机构名称', width: 150 },
+            { field: 'worker_no', title: '填报人员工号', width: 150, editRender: { name: 'input' } },
+        ],
+        branch_grants:{{ branch_grants |safe}},
+        branch_grants_visible:false,
+        {% for one in t_json['rpt_content']%}
+        {{one.name}} :'',
+        {% endfor%}
+        
+        query_form:{
+            branch_no:'{{param['branch_no']}}',
+            rpt_id:{{param['rpt_id']}},
+            b_date:'{{param['b_date']}}',
+            e_date:'{{param['e_date']}}'
+        },
+        query_result:{ret_df_detail:{columns:[],data:[]},ret_df_hz:{columns:[],data:[]}},
+        message:'',
+        editableTabsValue: 'welcome',
+        editableTabs: [
+            { title: '欢迎使用',name: 'welcome',closable:false, content: 'xxxx' }
+          ],
+        tabIndex: 2
+      },
+      delimiters:['${', '}'],
+      methods: {//this.$refs[value][0].contentWindow.location.reload()
+        logout(){
+          axios.get(url_prefix+'/logout')
+            .then(function(response){
+              window.location="/"
+            }) 
+        },
+        branch_grants_dialog_submit(){
+            old_this=this
+            let params = new URLSearchParams();
+            for(var key in this.branch_grants){
+                params.append(key,this.branch_grants[key])
+            }
+            axios.post(url_prefix+"/submit_branch_grants",{content:this.branch_grants
+            ,rpt_id:{{t_json['id'] }}
+            }).then(function(response){
+                if(response.data.errcode==0)
+                    alert("填写成功！")
+                else
+                    old_this.message=response.data.errmsg
+                old_this.branch_grants_visible=false
+            });
+        },
+        queryData(){
+            old_this=this
+            let params = new URLSearchParams();
+            for(var key in this.query_form){
+                params.append(key,this.query_form[key])
+            }
+            axios.post(url_prefix+"/queryData",this.query_form)
+            .then(function(response){
+                if(response.data.errcode==0){
+                    old_this.query_result=response.data.data
+                    alert("查询成功！")
+                }
+                else
+                    old_this.message=response.data.errmsg
+            });
+        },
+        submit_tianbao_content(){
+            var submit_content={
+            {% for one in t_json['rpt_content']%}
+                {{one.name}} :this.{{one.name}},
+            {% endfor%}
+            }
+            old_this=this
+            let params = new URLSearchParams();
+            for(var key in submit_content){
+                params.append(key,submit_content[key])
+            }
+            axios.post(url_prefix+"/submit_tianbao_content",{content:JSON.stringify(submit_content)
+            ,rpt_id:{{t_json['id'] }}
+            }).then(function(response){
+                if(response.data.errcode==0)
+                    alert("填写成功！")
+                else
+                    old_this.message=response.data.errmsg
+            });
+        }
+    }
+});
+</script>

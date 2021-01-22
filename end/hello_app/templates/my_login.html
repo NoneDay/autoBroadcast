@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+        <head>
+            <meta charset="utf-8" />
+            <script type="text/javascript" src="/static/vue.js"></script> 
+            <script src="/static/axios.min.js"></script>     
+            <!-- 引入样式 -->
+            <link rel="stylesheet" href="/static/element-ui-index.css">
+            <!-- 引入组件库 -->
+            <script src="/static/element-ui-index.js"></script>
+    
+            <!-- 引入样式 -->
+            <link rel="stylesheet" href="/static/vxe-table-index.css">
+            <!-- 引入脚本 -->
+            <script src="/static/xe-utils.js"></script>
+            <script src="/static/vxe-table-index.min.js"></script>
+        
+            <style type="text/css">
+                .dataframe tbody tr th:only-of-type {vertical-align: middle;}
+                .dataframe tbody tr th {vertical-align: top;}
+                .dataframe thead th {text-align: right;}
+                .dataframe td {border:none}    
+                .dataframe th {border:none}
+                .el-tabs__new-tab {background-color: #42b142;}
+            </style>
+        
+            <STYLE type="text/css">
+             
+    .el-header, .el-footer {background-color: #B3C0D1;color: #333;text-align: center;}
+    .el-aside {background-color: #D3DCE6;color: #333;text-align: center;}
+    .el-main {background-color: #E9EEF3;color: #333;text-align: center;}
+    body > .el-container {margin-bottom: 40px;}
+</STYLE>
+</head>
+<body >
+    <div id="app">
+        <el-container >
+            <el-form ref="login" :model="login_form" label-width="80px">
+                <el-form-item label="用户名"><el-input v-model="login_form.userid" placeholder="edit me" /></el-form-item>
+                <el-form-item label="密码"><el-input v-model="login_form.password" placeholder="edit me" show-password/></el-form-item>
+                <el-form-item ><el-button type="primary" @click="login">登录</el-button></el-form-item>
+            </el-form>
+            <p>${message}</p>
+            
+        </el-container>
+        </div>
+</body>
+</html>
+<script type="text/javascript">
+    url_prefix="{{ url_prefix }}"
+    // 修改原生 HTML 插值的定界符。     
+    var app = new Vue({
+          el: '#app',
+          data:{
+            message:'',
+            login_form:{ userid:'xxxxxxx', password:'ccccccc'}
+          },
+          delimiters:['${', '}'],
+          methods:{
+            login: function () {
+                old_this=this
+                let params = new URLSearchParams();
+                for(var key in this.login_form){
+                    params.append(key,this.login_form[key])
+                }
+                axios.post(url_prefix+"/login/",params)
+                        .then(function(response){
+                            if(response.data.errcode==0)
+                                window.location=url_prefix+"/"
+                            else
+                                old_this.message=response.data.errmsg
+                        });
+            }
+        }
+      })
+</script>               

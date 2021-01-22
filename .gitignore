@@ -1,0 +1,12 @@
+# Byte-compiled / optimized / DLL files
+end/__pycache__/
+end/.vs/
+end/dist/
+end/static/
+end/*.ini
+
+front/dist/
+front/node_modules/
+*.ini
+*.rar
+
