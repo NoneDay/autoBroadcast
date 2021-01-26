@@ -19,16 +19,12 @@ import './styles/common.scss';
 import basicBlock from './components/basic-block/main'
 import basicContainer from './components/basic-container/main'
 
-import 'xe-utils'
-import VXETable from 'vxe-table'
-import 'vxe-table/lib/index.css'
-
 Vue.use(router)
 Vue.use(VueAxios, axios)
 Vue.use(ElementUI, {size: 'small',
   i18n: (key, value) => i18n.t(key, value)
 })
-Vue.use(VXETable)
+
 Vue.use(window.AVUE, {size: 'small',
   i18n: (key, value) => i18n.t(key, value)
 })
@@ -45,8 +41,10 @@ iconfontVersion.forEach(ele => {
   loadStyle(iconfontUrl.replace('$key', ele));
 })
 
-Vue.config.productionTip = false;
+//import CellReportFormDesign from './views/rpt_design/index';
+//Vue.use(CellReportFormDesign)
 
+Vue.config.productionTip = false;
 new Vue({
   router,
   store,

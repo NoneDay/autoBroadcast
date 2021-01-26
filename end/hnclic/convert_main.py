@@ -231,6 +231,10 @@ async def load_from_url2(data_from=None,config_data=None,user_input_form_data=No
                 data.columns=header if p['columns']=='' or p['columns'].startswith("auto") else ['s'+str(x) for x in range(len(data.loc[0]))]
                 view_columns=str.strip(p['view_columns'])
                 if view_columns!="" :
+                    view_set=set(view_columns.split(',') )
+                    data_set=set(data.columns)
+                    if len(view_set- data_set )>0:
+                        raise RuntimeError(f"{p['name']}以下列已经被删除：({str(view_set- data_set)})。新增的列({str(data_set - view_set)} )" )
                     data=data[[ (data.columns[int(x)] if x.isdigit() else x) for x in view_columns.split(',')]]
             if isinstance(p['view_columns'],list):
                 if len(p['view_columns'])!=0 :
@@ -292,9 +296,9 @@ async def _load_html_from_url(data_from=None,config_data=None,user_input_form_da
         cookies={}
         if data_from.get('grant_url') is not None and data_from.get('grant_url').strip()!="" :#授权url，获取cookies ，让取数url带过去
             real_form_data=None if data_from.get('grant_form_input') is None else {x['name']:x['value'] for x in data_from['grant_form_input']}
-            async with session.get(data_from['grant_url']) if (real_form_data is None or len(real_form_data) ==0) else session.post(data_from['grant_url'],real_form_data) \
+            async with session.get(data_from['grant_url']) if (real_form_data is None or len(real_form_data) ==0) else session.post(data_from['grant_url'],data=real_form_data) \
                  as text_html:
-                cookies=await text_html.cookies
+                cookies=text_html.cookies
     
         args=config_data.get('form_input')
         #设置取数form参数，先用用户传过来的参数覆盖总体的参数，在用总体参数覆盖具体报表的参数
@@ -334,7 +338,7 @@ def _guess_ds(soup):
     自动猜数据定义
     '''
     one_table=[x for x in soup.xpath('//table') if x.attrib.get("id",'').endswith('thetable')][0]
-    if one_table.attrib.get('data-options'):
+    if one_table.attrib.has_key('data-options'):
         if soup.text_content().find("/*-end-*/")>0:
             t_p={"t": "json","pattern": "#"+one_table.attrib['id'],"start": one_table.attrib['id'][0:-len("thetable")] + "_data={\"rows\":",
                 "end": "/*-end-*/","columns": "auto","view_columns": "","sort": "","name": "修改这里",
@@ -371,7 +375,7 @@ def __expland_merge_cells(soup,h_pattern):
     h_pattern=h_pattern.strip()
     select_result=soup.cssselect(h_pattern)
     if h_pattern.startswith('#'):#easyui的固定行列会导致有多个table，我们将他们的数据按行合并起来
-        if len(select_result)>0 and select_result[0].attrib.get('data-options'):
+        if len(select_result)>0 and select_result[0].attrib.has_key('data-options'):
             all_heads=[x for x in [__expland_merge_cells(one,'tr') for one in select_result[0].cssselect('thead')] if len(x)>0] #可以排除没有固定列的情况
             return [ [y for x in one_line for y in x] for one_line in [x for x in zip(*all_heads) ] ]
     #如果不是tr结尾，就自动添加一个上去
@@ -559,8 +563,6 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
         status_list,ret=asyncio.run(_inner_task(ret)) 
         for t in status_list:
             ret={**ret,**t}  
-    except Exception as e:
-        print(e)
     finally:
         pass
     #用已定义的全局参数，覆盖所有子取数的参数合集

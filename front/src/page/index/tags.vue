@@ -77,7 +77,7 @@ export default {
   methods: {
     generateTitle (item) {
       return this.$router.$avueRouter.generateTitle(
-        item.label,
+        item?.query?.label||item.label,
         (item.meta || {}).i18n
       );
     },

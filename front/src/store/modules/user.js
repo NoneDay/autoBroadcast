@@ -26,12 +26,19 @@ function addPath (ele, first) {
   if (isURL(ele[propsDefault.path])) {
     ele[propsDefault.path] = ele[propsDefault.path].replace(/&/g, "$")
   }
-  if (!isChild && first && !isURL(ele[propsDefault.path])) {
+  if (!isChild && first && !isURL(ele[propsDefault.path])
+  && !ele[propsDefault.path].startsWith("/")
+  && !ele[propsDefault.path].endsWith(".cr")
+  ) {
     ele[propsDefault.path] = ele[propsDefault.path] + '/index'
   } else {
-    ele[propsDefault.children] && ele[propsDefault.children].forEach(child => {
-      if (!isURL(child[propsDefault.path])) {
-        child[propsDefault.path] = `${ele[propsDefault.path]}/${child[propsDefault.path] ? child[propsDefault.path] : 'index'}`
+    ele[propsDefault.children]?.forEach(child => {
+      if (!isURL(child[propsDefault.path]) 
+        && !child[propsDefault.path].startsWith("/")
+        && !child[propsDefault.path].endsWith(".cr")
+        ) //我加的规则，我自己在后台已经弄好的绝对路径
+      {
+        child[propsDefault.path] = `${ele[propsDefault.path]}/${child[propsDefault.path] ?? 'index'}`
       }
       addPath(child);
     })

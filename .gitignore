@@ -9,4 +9,7 @@ front/dist/
 front/node_modules/
 *.ini
 *.rar
-
+*.pid
+*.log
+*.gitignore
+package-lock.json

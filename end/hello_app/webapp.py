@@ -40,7 +40,7 @@ if __name__ == '__main__':
     glb.start_scheduler()
     #wx_receive_message()
     app.static_url_path="/static"
-    app.static_folder= "..\\dist"
+    app.static_folder= "..\\..\\front\\dist"
 
     from gevent import pywsgi
     server = pywsgi.WSGIServer(('0.0.0.0', 5050 if glb.is_test else 5000), app)

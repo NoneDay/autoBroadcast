@@ -5,9 +5,14 @@
       <el-button @click="handleCommand('createCatalog',null,{})"
         class="create-project-btn"  type="primary" size="mini" >新建目录</el-button>
       <el-scrollbar style="height:100%">
-        <el-tree :data="menu" :props="defaultProps" node-key="id"
+        <el-tree :data="menu" 
+            :props="defaultProps" node-key="id"
             :default-expanded-keys="treeExpandData"
-            draggable @node-drop="handleDrop" @node-click="handleNodeClick" :allow-drop="allowDrop" :allow-drag="allowDrag"
+            draggable
+            @node-drop="handleDrop"
+            @node-click="handleNodeClick" 
+            :allow-drop="allowDrop" 
+            :allow-drag="allowDrag"
           >
         <span class="custom-tree-node" slot-scope="{ node, data }" >
             <span v-if="data.is_catalog==1" 
@@ -43,7 +48,7 @@
       <el-scrollbar style="height:100%">
         <el-tree :data="menu" :props="defaultProps" 
             node-key="id" :default-expanded-keys="treeExpandData"
-            
+            @node-click="handleNodeClick" 
           >
           <span class="custom-tree-node" slot-scope="{ node, data }" >
             <span v-if="data.is_catalog==1" type="text" size="mini" 
@@ -98,6 +103,9 @@
       },
       computed: {
         ...mapGetters(['menu','menuId']),
+        prefix(){
+          return this.menuId?.meta?.prefix;
+        },
         labelKey () {
           return this.props.label || this.config.propsDefault.label;
         },
@@ -155,7 +163,7 @@
       },
       methods: {
         handleNodeClick(item) {
-            if(item.is_catalog==1 || (item.children && item.children.length>0))
+          if(item.is_catalog==1 || (item.children && item.children.length>0))
               return
           //data.meta.label=data.meta.label+"22"
           //this.$router.push(item.path)
@@ -168,7 +176,8 @@
               name: item[this.labelKey],
               src: item[this.pathKey]
             }, item.meta),
-            query: item.query
+            query: item.query,
+            label:item[this.labelKey],
           });
         },
         remove(node, data){
@@ -191,7 +200,7 @@
                   }).then(async({ value }) => {
                     if(node!=null && old_this.has_name(node.data.children, value))
                       return
-                    let res=await create_one( {...old_this.curMenuItem,...{label:value,type:'Catalog'}})
+                    let res=await create_one( {prefix:old_this.menuId?.meta?.prefix,...old_this.curMenuItem,label:value,type:'Catalog'})
                     
                     this.$store.dispatch("GetMenu", this.menuId.parentId).then(data => {
                       if (data.length !== 0) {
@@ -213,7 +222,7 @@
                   }).then(async({ value }) => {
                     if(old_this.has_name(node.data.children,value))
                       return
-                    let res= await create_one({prefix:old_this.menuId.meta.prefix,...old_this.curMenuItem,label:value,type:'form'})
+                    let res= await create_one({prefix:old_this.menuId?.meta?.prefix,...old_this.curMenuItem,label:value,type:'form'})
                     this.$store.dispatch("GetMenu", this.menuId.parentId).then(data => {                      
                       if (data.length !== 0) {
                         resetRouter()
@@ -236,7 +245,7 @@
                       return
                     old_this.curMenuItem.label=value;
                     
-                    await update_title({prefix,...old_this.curMenuItem})
+                    await update_title({prefix:old_this.menuId?.meta?.prefix,...old_this.curMenuItem})
                   }).catch(error=>error) 
               break
             case "delete":              
@@ -246,7 +255,7 @@
               }              
               this.$confirm(`此操作将永久删除该文件, 是否继续?`, `文件：${this.curMenuItem.label}`, {confirmButtonText: '确定',cancelButtonText: '取消',type: 'warning'})
                     .then(async () => {
-                      await delete_one(data);
+                      await delete_one({prefix:old_this.menuId?.meta?.prefix,...data});
                       let i=0
                       node.parent.data.children.forEach((x) => {
                         if (x.id === data.id) { node.parent.data.children.splice(i, 1) }
@@ -269,8 +278,8 @@
           return false
         },
   
-        handleDrop(draggingNode, dropNode, dropType, ev) {
-          move_one({draggingID:draggingNode.data.id,dropID:dropNode.data.id,dropType})          
+        async handleDrop(draggingNode, dropNode, dropType, ev) {
+          await move_one({prefix:old_this.menuId?.meta?.prefix,draggingID:draggingNode.data.id,dropID:dropNode.data.id,dropType})          
         },
         allowDrop(draggingNode, dropNode, type) {
   

@@ -6,6 +6,7 @@ from hnclic import convert_main as ce,glb
 import json
 from werkzeug.utils import secure_filename
 import pymssql
+from pathlib import Path
 
 @app.route("/user/info")
 @app.route("/user/getUserInfo")
@@ -44,8 +45,8 @@ def getTopMenu():
     return jsonify({'data':
         [   
             {'label': "战报管理",'path': "/wel/index",'icon': 'el-icon-document', 'parentId': 0,'meta': {'edit': True,'prefix':"zb"}},
-            {'label': "报表平台",'icon': 'el-icon-document','path': "/wel/index",'meta': {'edit': False,'prefix':"zb",},'parentId': 1},
-            #{'label': "测试",'icon': 'el-icon-document','path': "/test/index",'parentId': 2},
+            {'label': "报表平台",'icon': 'el-icon-document','path': "/wel/index", 'parentId': 1,'meta': {'edit': False,'prefix':"zb"}},
+            {'label': "测试",'icon': 'el-icon-document','path': "/rpt-list/index",'parentId': 2},
             #{'label': "更多",'icon': 'el-icon-document','path': "/wel/dashboard",'meta': {'menu': False},'parentId': 3}
         ]
         }
@@ -59,11 +60,14 @@ def getMenu(parentId):
             with conn.cursor(as_dict=True) as cursor:
                 cursor.execute('SELECT id,report_name,isnull(pid,0) pid,is_catalog FROM zhanbao_tbl WHERE worker_no=%s  order by xuhao asc', session['userid'])
                 ret=cursor.fetchall()
-        ret=[ {'path':f'/zb/zb/{x["id"]}','icon': 'el-icon-document','component': 'views/zhanbao/zb_index',
-                'label': x["report_name"], 'id': x["id"],'pid':x["pid"],"is_catalog":x['is_catalog'],'meta':{'id':x["id"]}
+        ret=[ {'path':f'/zb/zb/{x["id"]}','icon': 'el-icon-document',
+                'component': 'views/zhanbao/zb_index',
+                'label': x["report_name"], 
+                'id': x["id"],'pid':x["pid"],
+                "is_catalog":x['is_catalog'],'meta':{'id':x["id"],'keepAlive': True}
                 }
             for x in ret]
-    elif(parentId=='1'):
+    elif parentId=='1':
         with glb.db_connect() as conn:
             with conn.cursor(as_dict=True) as cursor:
                 cursor.execute("""with aaa as(   select a.id,res_icon,a.res_name,a.res_seq,isnull(a.res_url,'') res_url,isnull(a.res_pid,0) pid from hnportal.[dbo].[t_resources] a )
@@ -71,15 +75,22 @@ def getMenu(parentId):
  where c.emp_no=%s  union all select a.* from bbb b join aaa a on b.pid=a.id
 ) select distinct * from bbb order by res_seq""",session['userid'])
                 ret=cursor.fetchall()
-        ret=[ {'path':x["res_url"],'icon': 'el-icon-document','label': x["res_name"], 'id': x["id"],'pid':x["pid"],
+        ret=[ {'path':x["res_url"],'icon': 'el-icon-document',
+            'label': x["res_name"], 'id': x["id"],'pid':x["pid"],
                 'meta':{'id':x["id"],'isTab':False}
-            }
+                }
             for x in ret]
+    elif parentId=='2' and session['userid']=='14100298':
+        ret=[{'label': "报表目录",'icon': 'el-icon-document','path': "/rpt-list/index"}]       
     else:
         ret=[]
     return  jsonify(data=ret)
 
 
+@app.route("/api/yzl_info", methods=['GET','POST'])
+def yzl_info():
+    info=request.args['info']
+    return "回复："+request.args['info']
 
 @app.route("/api/raw/<int:id>/<rawtype>/<ds_names>")
 def raw_get(id,rawtype,ds_names):

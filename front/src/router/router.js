@@ -14,6 +14,13 @@ import AvueRouter from './avue-router';
 import i18n from '@/lang' // Internationalization
 import Store from '../store/';
 Vue.use(VueRouter)
+//vue-router.min.js:6 Uncaught (in promise) Error
+const originalPush = VueRouter.prototype.push
+VueRouter.prototype.push = function push(location, onResolve, onReject) {
+  if (onResolve || onReject) return originalPush.call(this, location, onResolve, onReject)
+  return originalPush.call(this, location).catch(err => err)
+}
+
 //创建路由
 export const createRouter = () => new VueRouter({
   scrollBehavior (to, from, savedPosition) {
@@ -32,6 +39,8 @@ export const createRouter = () => new VueRouter({
   routes: [...PageRouter, ...ViewsRouter]
 })
 const Router = createRouter()
+
+
 AvueRouter.install(Vue, Router, Store, i18n);
 Router.$avueRouter.formatRoutes(Store.state.user.menuAll, true);
 Router.addRoutes([...PageRouter, ...ViewsRouter]);

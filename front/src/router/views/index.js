@@ -21,16 +21,7 @@ export default [{
     component: () =>
       import( /* webpackChunkName: "views" */ '@/views/wel/dashboard')
   }]
-}, {
-  path: '/zb',
-  component: Layout,
-  children: [{
-    path: 'zb/:id',
-    name: '战报',
-    component: () =>
-      import( /* webpackChunkName: "views" */ '@/views/zhanbao/zb_index')
-  }]
-}, {
+},  {
   path: '/form-detail',
   component: Layout,
   children: [{
@@ -41,6 +32,30 @@ export default [{
     },
     component: () =>
       import( /* webpackChunkName: "views" */ '@/views/util/form-detail')
+  }]
+},{
+  path: '/rpt-list',
+  component: Layout,
+  children: [{
+    path: 'index',
+    name: '报表目录', 
+    meta: {
+      keepAlive: true,
+    },
+    component: () =>
+      import( /* webpackChunkName: "views" */ '@/views/rpt_design/list')
+  }]
+},{
+  path: '/rpt-design',
+  component: Layout,
+  children: [{
+    path: 'index',
+    name: '报表目录', 
+    meta: {
+      keepAlive: true,
+    },
+    component: () =>
+      import( /* webpackChunkName: "views" */ '@/views/rpt_design/design_index')
   }]
 }, {
   path: '/info',

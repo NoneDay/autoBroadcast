@@ -1,3 +1,8 @@
+const  path = require('path')
+
+function resolve(dir){
+    return path.join(__dirname, dir)
+}
 // 基础路径 注意发布之前要先修改这里
 let baseUrl = './'
 const port = process.env.port || process.env.npm_config_port || 8080 // dev port
@@ -24,6 +29,14 @@ module.exports = {
         //},before: require('./mock/mock-server.js')
         //,
         proxy: { 
+            "/aps/report5": {
+                target: "http://report.hn.clic/report5",
+                changeOrigin: true,//是否允许跨域
+                ws: true,
+                pathRewrite: {
+                    "^/aps/report5": ""
+                }
+            },
             "/aps": {
                 target: "http://127.0.0.1:5050/",
                 changeOrigin: true,
@@ -32,6 +45,7 @@ module.exports = {
                     "^/aps": ""
                 }
             },
+
         }
     },
     chainWebpack: (config) => {
@@ -42,14 +56,21 @@ module.exports = {
             'vuex': 'Vuex',
             'axios': 'axios',
             'element-ui': 'ELEMENT',
+            'CodeMirror':'CodeMirror',
+            'vue-grid-layout':'VueGridLayout',
+            "xlsx":"xlsx",//很大的一个包
+            'monaco-editor':'monaco-editor',
+            'echarts':'echarts',
         })
-        const entry = config.entry('app')
-        entry
-            .add('babel-polyfill')
-            .end()
-        entry
-            .add('classlist-polyfill')
-            .end()
+
+
+        //const entry = config.entry('app')
+        //entry
+        //    .add('babel-polyfill')
+        //    .end()
+        //entry
+        //    .add('classlist-polyfill')
+        //    .end()
         //entry
         //    .add('@/mock')
         //    .end()

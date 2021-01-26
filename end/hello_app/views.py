@@ -137,7 +137,7 @@ def ReportDefine_save(id):
                 'WHERE id=%(id)d and worker_no=%(userid)s',data)
             conn.commit()
     #id,cron_str,cron_start,config_data,userid
-    glb.update_scheduler(id,cron_str,data['cron_start'],request.json['config_data'],session['userid'])
+    glb.update_scheduler(id,cron_str,data['cron_start'],request.json['config_data'],session['userid'],request.json['report_name'])
     return {'errcode':0,'message':'更新成功！','lastrowid':int(str(lastrowid)),'report_name':request.json['report_name']}
 
 #-----------------------------------------------
@@ -197,14 +197,6 @@ def remove_file(id,filename):
 def index():
     return redirect("/static/index.html")
 
-@app.route("/zb/list")
-def zb_list():
-    with glb.db_connect() as conn:
-        with conn.cursor(as_dict=True) as cursor:
-            cursor.execute('select id,report_name from  zhanbao_tbl where worker_no=%s order by xuhao asc',session['userid'])
-            ret=cursor.fetchall()
-            return json.dumps(ret,ensure_ascii=False)
-
 @app.route("/zb/update_title",methods=['post'])
 def update_title():
     with glb.db_connect() as conn:
@@ -236,7 +228,7 @@ def create_one():
 
 @app.route("/zb/delete_one",methods=['post'])
 def delete_one():
-    glb.update_scheduler(request.json['id'],'0',None,None,None)
+    glb.update_scheduler(request.json['id'],'0',None,None,None,None)
     with glb.db_connect() as conn:
         with conn.cursor(as_dict=True) as cursor:
             cursor.execute('delete from zhanbao_tbl where worker_no=%(worker_no)s and id=%(id)d',
@@ -282,7 +274,8 @@ def move_one():
             conn.commit()
             return {'code':0,'message':""}
 
-import tracemalloc
+import objgraph,time
+import gc,tracemalloc
 tracemalloc.start()
 b_snapshot = tracemalloc.take_snapshot()
 
@@ -293,11 +286,22 @@ def get_info_s():
 
 @app.route("/zb/info",methods=['get'])
 def get_info():
-    print("====================================")
+    gc.collect()
     snapshot2 = tracemalloc.take_snapshot()
-    top_stats = snapshot2.compare_to(b_snapshot, 'lineno')
-    for stat in top_stats[:10]:
-        print(stat)
+    with open("flaskMemoy.log", 'a+') as f:
+        f.write("====================================")
+        f.write(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+        
+        f.write("\n")
+        top_stats = snapshot2.compare_to(b_snapshot, 'lineno')
+        for stat in top_stats[:10]:
+            f.write(str(stat))
+            f.write("\n")
+        f.write("====================================")
+        f.write("\n")
+        objgraph.show_most_common_types(limit=5,file=f)
+        f.write("====================================")
+        f.write("\n")
     return  jsonify(text="ok")
 
 @app.route('/h5/<name>',methods=['get'])
