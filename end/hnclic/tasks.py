@@ -5,14 +5,32 @@ from hnclic.taskMain import zbTaskApp
 import excel2img
 import comtypes.client
 from hnclic import convert_main as ce,glb
-@zbTaskApp.task
-def add(x, y):
-    time.sleep(1)
-    return x + y
 
 @zbTaskApp.task
-def zb_execute(rptid,config_data,userid,upload_path):
+def files_template_exec(rptid,config_data,userid,upload_path):
     ce.files_template_exec(rptid,config_data,userid,upload_path,wx_queue=glb.msg_queue)   
+
+@zbTaskApp.task
+def zb_execute(rptid,config_data=None,userid=None,report_name=""):
+    if config_data is not None:
+        return glb.zb_execute(rptid,config_data,userid,report_name)    
+    with glb.db_connect() as conn:
+            with conn.cursor(as_dict=True) as cursor:
+                cursor.execute('SELECT config_txt,worker_no,report_name FROM zhanbao_tbl WHERE id=%(id)d and is_catalog=0 order by xuhao asc', 
+                                {"id":rptid}
+                            )
+                ret=cursor.fetchone()
+    if ret is None:
+        return "没有这个ID:"+rptid    
+    return glb.zb_execute(rptid,json.loads(ret['config_txt']),ret['worker_no'],ret['report_name'])
+
+@zbTaskApp.task
+def send_message():
+    glb.msg_queue.sendMessage()
+
+@zbTaskApp.task
+def load_all_data(config_data,id,args=None,upload_path=None,userid=None):
+    return ce.load_all_data(config_data,id=id,args=args,upload_path=upload_path,userid=userid)
 
 @zbTaskApp.task
 def cut_image_xlsx(fn_excel, fn_image, page=None, _range=None):
@@ -30,17 +48,6 @@ def ppt2png(pptFileName):
     #保存为pdf
     #ppt.SaveAs(outputFileName, 32) # formatType = 32 for ppt to pdf
     # 关闭打开的ppt文件
-
     ppt.Close()
     # 关闭powerpoint软件
     powerpoint.Quit()
-
-@zbTaskApp.task
-def sendMessage():
-    glb.msg_queue.sendMessage()
-    #requests.post(f"http://localhost:10001/{res['type']}",data=res['data'].encode('utf-8','surrogatepass'))
-    
-@zbTaskApp.task
-def send_yzl(id):
-    pass
-

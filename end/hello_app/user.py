@@ -7,7 +7,7 @@ import json
 from werkzeug.utils import secure_filename
 import pymssql
 from pathlib import Path
-
+from handle_file import is_number
 @app.route("/user/info")
 @app.route("/user/getUserInfo")
 def user_info():
@@ -46,7 +46,7 @@ def getTopMenu():
         [   
             {'label': "战报管理",'path': "/wel/index",'icon': 'el-icon-document', 'parentId': 0,'meta': {'edit': True,'prefix':"zb"}},
             {'label': "报表平台",'icon': 'el-icon-document','path': "/wel/index", 'parentId': 1,'meta': {'edit': False,'prefix':"zb"}},
-            {'label': "测试",'icon': 'el-icon-document','path': "/rpt-list/index",'parentId': 2},
+            #{'label': "测试",'icon': 'el-icon-document','path': "/rpt-list/index",'parentId': 2},
             #{'label': "更多",'icon': 'el-icon-document','path': "/wel/dashboard",'meta': {'menu': False},'parentId': 3}
         ]
         }
@@ -69,14 +69,16 @@ def getMenu(parentId):
             for x in ret]
     elif parentId=='1':
         with glb.db_connect() as conn:
-            with conn.cursor(as_dict=True) as cursor:
-                cursor.execute("""with aaa as(   select a.id,res_icon,a.res_name,a.res_seq,isnull(a.res_url,'') res_url,isnull(a.res_pid,0) pid from hnportal.[dbo].[t_resources] a )
-,bbb as ( select a.* from aaa a  join  hnportal.[dbo].[t_role_reses] b on a.id=b.res_id join  hnportal.[dbo].[t_emp_roles] c on c.role_code=b.role_code
- where c.emp_no=%s  union all select a.* from bbb b join aaa a on b.pid=a.id
-) select distinct * from bbb order by res_seq""",session['userid'])
+            with conn.cursor(as_dict=True) as cursor:#.encode('latin-1').decode('gbk')
+                cursor.execute("""SELECT m.id, m.name label, m.parent_id pid, m.url res_url, m.icon
+FROM [10.20.54.104].localapp.dbo.protal_sys_menu m
+LEFT JOIN [10.20.54.104].localapp.dbo.protal_sys_role_menu rm ON (rm.menu_id = m.id)
+LEFT JOIN [10.20.54.104].localapp.dbo.protal_sys_user_role ur ON (ur.role_id = rm.role_id)
+LEFT JOIN [10.20.54.104].localapp.dbo.protal_sys_user u ON (u.id = ur.user_id)
+WHERE u.name = %s""",session['userid'])
                 ret=cursor.fetchall()
-        ret=[ {'path':x["res_url"],'icon': 'el-icon-document',
-            'label': x["res_name"], 'id': x["id"],'pid':x["pid"],
+        ret=[ {'path':x["res_url"] if x["res_url"] != None else "",'icon': 'el-icon-document-copy',
+            'label': x["label"].encode('latin-1').decode('gbk'), 'id': x["id"],'pid':x["pid"],
                 'meta':{'id':x["id"],'isTab':False}
                 }
             for x in ret]
@@ -86,11 +88,34 @@ def getMenu(parentId):
         ret=[]
     return  jsonify(data=ret)
 
-
+import hnclic.tasks 
 @app.route("/api/yzl_info", methods=['GET','POST'])
 def yzl_info():
-    info=request.args['info']
-    return "回复："+request.args['info']
+    info=request.form.get('info','')
+    user_id=request.form.get('user_id','')
+    if not info.startswith("@助手"):
+        return "回复：不是给我的命令"
+    info_arr=info.split()
+    if info_arr[1]=='list':
+        with glb.db_connect() as conn:
+            with conn.cursor(as_dict=True) as cursor:
+                cursor.execute('SELECT id,report_name FROM zhanbao_tbl WHERE worker_no=%s and is_catalog=0 order by xuhao asc', user_id)
+                ret=cursor.fetchall()
+        return '\n'.join([f"{x['id']}_{x['report_name']}" for x in ret])
+    if is_number(info_arr[1]):
+        with glb.db_connect() as conn:
+            with conn.cursor(as_dict=True) as cursor:
+                cursor.execute('SELECT config_txt,report_name FROM zhanbao_tbl WHERE worker_no=%(user_id)s and id=%(id)d and is_catalog=0 order by xuhao asc', 
+                                {"user_id":user_id,"id":int(info_arr[1])}
+                            )
+                ret=cursor.fetchone()
+        if ret is None:
+            return "没有这个ID:"+info_arr[1]
+        hnclic.tasks.zb_execute.delay(int(info_arr[1]),json.loads(ret['config_txt']),user_id,ret['report_name'] )
+        return ret['report_name']+",已经开始执行"
+    return """ @助手 list   可以看到所有自己做的战报ID 和名字
+ @助手 战报ID   执行战报
+    """
 
 @app.route("/api/raw/<int:id>/<rawtype>/<ds_names>")
 def raw_get(id,rawtype,ds_names):

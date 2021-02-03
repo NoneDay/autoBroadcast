@@ -9,6 +9,7 @@ from hnclic import convert_main as ce,glb
 import views,tianbao,user
 import decimal
 
+
 class DecimalDateEncoder(json.JSONEncoder):  
     def default(self, obj):  
         if isinstance(obj, decimal.Decimal):

@@ -70,7 +70,10 @@ export function preview_one(_this) {
 
             Object.assign(_this.result,response_data)
             console.info( _this.result)
-            _this.queryForm=response_data.form
+            response_data.form.forEach(ele=>{
+                _this.$set(_this.queryForm,ele.name,ele.value)
+            })
+            
             Object.assign(_this.context.report_result,_this.result)
             _this.context.report.dataSets.dataSet.forEach(element => {
                 let define_ds= _this.context.report_result.dataSet[element._name]               

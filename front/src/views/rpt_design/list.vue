@@ -1,14 +1,15 @@
 <template>
-  <div>
-    <el-breadcrumb separator="/">
+  <div style="height:100%">
+      <div><span> 当前目录：</span>
+    <el-breadcrumb separator="/" style="display: inline-block;">
     <el-breadcrumb-item > <span @click="path_click(0,0)"> root </span></el-breadcrumb-item>
         <el-breadcrumb-item v-for="(one,idx) in loc_path" :key="idx" 
         ><span @click="path_click(one,idx+1)"> {{ one}} </span></el-breadcrumb-item>
     </el-breadcrumb>
-
+    </div>
     <el-table  :data="tableData.children"
-        style="width: 100%;margin-bottom: 20px;height:90%"
-        row-key="FullPathFileName"
+        style="width: 100%;margin-bottom: 20px;"
+        row-key="FullPathFileName" :height="'90%'"
         border @row-click="row_click"
         :default-expand-all='False'>
         <el-table-column

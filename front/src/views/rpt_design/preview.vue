@@ -35,10 +35,42 @@
     </el-pagination>    
   </div>
   <template v-else>
+    <div> 
+      <el-form :inline="true" >
+        <el-input hidden v-for="one in result.form.filter(x=>x.hide=='True')" :key="one.name" v-model="queryForm[one.name]">
+        </el-input>
+      
+        <div style="display:inline" v-for="one in result.form.filter(x=>x.hide=='False')" :key="one.name">
+          <el-form-item :label="one.prompt">
+          <el-input v-if="one.data_type=='string' && one.tagValueList.length==0" v-model="queryForm[one.name]"></el-input>
+          <el-select v-if="one.data_type=='string' && one.tagValueList.length>0" v-model="queryForm[one.name]" :multiple="one.allowMutil=='False'?false:true">
+             <el-option
+                v-for="item in one.tagValueList"
+                :key="item[1]"
+                :label="item[0]"
+                :value="item[1]">
+              </el-option>
+          </el-select>
+          <el-date-picker v-if="one.data_type=='date'" value-format="yyyy-MM-dd" 
+                    v-model="queryForm[one.name]"></el-date-picker>
+          <el-date-picker v-if="one.data_type=='dateTime'" :value-format="one.dateTimeFormat" :format="one.dateTimeFormat" 
+          :type="['yyyyMM','yyyy-MM'].includes(one.dateTimeFormat)?'month':'datetime'"
+                    v-model="queryForm[one.name]"></el-date-picker>
+          </el-form-item>
+          
+           </div>
+            <el-form-item>
+            <el-button type="primary">查询</el-button>
+            
+          </el-form-item>
+      </el-form>
+    </div>
+    <div style="height:90%">
         <grid-layout-form v-if="layoutType=='gridLayout'" :layout="layout" >
         </grid-layout-form>          
         <widget-form v-else   :data="layout"   
         ></widget-form>
+    </div>
     </template>
   </div>
 </template>
@@ -74,7 +106,7 @@ export default {
   },  
   data () {
     return {
-        queryForm:[],
+        queryForm:{},
         exec_log:"",
         result:{},
         clickedEle:{},

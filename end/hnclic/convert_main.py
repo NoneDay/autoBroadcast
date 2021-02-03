@@ -467,7 +467,9 @@ def appendData_and_execLastSql(one_ds,ret,upload_path):
         key_column=v['data'].columns[0]
     one_ds['key_column']=key_column
     
-    #for k,v in ret.items():
+    #t_append=v['p'].get('append')
+    #if t_append is not None  and isinstance( t_append,dict):
+    #    v['p']['append']=[t_append,]
     for one in v['p'].get('append',list()):
         if one.get('from','')=='':
             continue

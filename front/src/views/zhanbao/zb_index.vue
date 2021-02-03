@@ -4,8 +4,35 @@
     <el-tag>{{data.report_name}}</el-tag>
     当前ID:  <span v-html="data.curr_report_id" />  
       已定义数据集：
-      <el-tag v-for="x in all_ds" :key="x.name" style="margin: 10px;">{{x.name}}</el-tag>
-    
+      
+        <el-dropdown split-button type="primary"  v-for="x in all_ds" :key="x.name"   style="margin-right: 10px;"
+        @click="create_ds_template_statement(null,x.name)"
+        @command="create_ds_template_statement($event,x.name)"
+        >
+         {{x.name}}
+        <el-dropdown-menu slot="dropdown">
+          <el-col :span="8" v-for="col in x.last_columns" :key="col">
+            <el-dropdown-item :command="col"  >{{col}}</el-dropdown-item>
+          </el-col>         
+        </el-dropdown-menu>
+        
+      </el-dropdown>
+
+      <el-dropdown split-button type="success"  v-for="x in data.config_data.vars.filter(x=>x.resultType=='none') " :key="x.name"   style="margin-right: 10px;"
+        @click="create_ds_template_statement(null,x.name)"
+        @command="create_ds_template_statement($event,x.name)"
+        >
+         {{x.name}}
+        <el-dropdown-menu slot="dropdown">
+          <el-col :span="8" v-for="col in all_ds.find(a=>a.name==x.ds).last_columns" :key="col">
+            <el-dropdown-item :command="col"  >{{col}}</el-dropdown-item>
+          </el-col>         
+        </el-dropdown-menu>
+      </el-dropdown>
+
+      
+
+       
     </el-row>
     <el-row>
       <el-col :span="22"><div >
@@ -188,6 +215,26 @@ export default {
     
   },
   methods: {
+    create_ds_template_statement(command,ds_name){
+      let text
+      if(command===null){
+        text="{{"+ ds_name+"}}"
+      }
+      else{
+        text="{{"+ ds_name+"['"+command+"']}}"
+      }
+      let tag = document.createElement('input');
+      tag.setAttribute('id', 'cp_hgz_input');
+      tag.value = text;
+      document.getElementsByTagName('body')[0].appendChild(tag);
+      document.getElementById('cp_hgz_input').select();
+      document.execCommand('copy');
+      document.getElementById('cp_hgz_input').remove();
+      this.$message({
+          message: '已复制到剪贴板：'+text,
+          type: 'success'
+        });
+    },
     change_cron(cron) {
       this.data.cron_str = cron
     },

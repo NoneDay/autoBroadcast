@@ -8,6 +8,7 @@ from hnclic import convert_main as ce
 from apscheduler.schedulers.background import BackgroundScheduler#,AsyncIOScheduler
 from redis import StrictRedis, ConnectionPool
 import qywx
+import hnclic.tasks
 
 def is_debug():
     gettrace = getattr(sys, 'gettrace', None)
@@ -176,20 +177,22 @@ def user_report_upload_path(curr_report_id,created=False)->str:
             return ret
 
 #定时任务，用户定义的战报
-def zb_execute(rptid,config_data,userid,upload_path,report_name=""):
+def zb_execute(rptid,config_data,userid,report_name=""):
     print(f"start:{rptid}")
-    loop = asyncio.new_event_loop()    
+    #loop = asyncio.new_event_loop()    
     try:
         redis.sadd("zb:executing",rptid)
-        asyncio.set_event_loop(loop)
-        ce.files_template_exec(rptid,config_data,userid,upload_path,wx_queue=msg_queue)
+        #asyncio.set_event_loop(loop)
+        ce.files_template_exec(rptid,config_data,userid,config['UPLOAD_FOLDER'],wx_queue=msg_queue)
     except Exception as e:
         msg_queue.put({'type':'sendMessage',"wxid":'qywx:'+userid,"content":f"{report_name},执行报错。错误信息："+ str(e)})
         print({'type':'sendMessage',"wxid":'qywx:'+userid,"content":f"{report_name},执行报错。错误信息："+ str(e)})
     finally:
         redis.srem("zb:executing",rptid)
-        loop.close()
+        #loop.close()
     print(f'new Tick! The time is:{datetime.now()} \tuserid:{userid}\trptid={rptid} ')
+
+
 
 from apscheduler.executors.pool import ThreadPoolExecutor, ProcessPoolExecutor
 scheduler = BackgroundScheduler(#executors = { 'zb_processpool': ProcessPoolExecutor()}
@@ -212,8 +215,8 @@ def start_scheduler():
                         if len(cron_arr)>5:
                             print(f" start:{row['id']}:{row['cron_str']}")
                             try:
-                                scheduler.add_job(zb_execute, 'cron', id=str(row['id']),max_instances=1,#executor="zb_processpool",
-                                args=(row['id'],json.loads(row['config_txt']),row['worker_no'],config['UPLOAD_FOLDER'],row['report_name']),
+                                scheduler.add_job(hnclic.tasks.zb_execute.delay, 'cron', id=str(row['id']),max_instances=10,#executor="zb_processpool",
+                                args=(row['id'],json.loads(row['config_txt']),row['worker_no'],row['report_name']),#
                                 day_of_week=cron_arr[5], month=cron_arr[4], day=cron_arr[3],
                                 hour=cron_arr[2],minute=cron_arr[1],second=cron_arr[0]
                                 )
@@ -222,7 +225,7 @@ def start_scheduler():
                         else:
                             print(f"{row['id']}的cron 不正确")
                     row = cursor.fetchone()
-        scheduler.add_job(msg_queue.sendMessage,'interval', max_instances=1,seconds=3)
+        scheduler.add_job(msg_queue.sendMessage,'interval', max_instances=10,seconds=1)
         scheduler.start()
 
 def update_scheduler(id,cron_str,cron_start,config_data,userid,report_name):
@@ -231,8 +234,8 @@ def update_scheduler(id,cron_str,cron_start,config_data,userid,report_name):
     if str(cron_start)=='1':
         cron_arr=cron_str.split()
         if len(cron_arr)>5:
-            scheduler.add_job(zb_execute, 'cron', id=str(id),max_instances=1,#executor="zb_processpool",
-                args=(id,config_data,userid,config['UPLOAD_FOLDER'],report_name),
+            scheduler.add_job(hnclic.tasks.zb_execute.delay, 'cron', id=str(id),max_instances=1,#executor="zb_processpool",
+                args=(id,config_data,userid,report_name),#
                         day_of_week=cron_arr[5], month=cron_arr[4], day=cron_arr[3],
                         hour=cron_arr[2],minute=cron_arr[1],second=cron_arr[0]
                     )

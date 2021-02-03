@@ -5,7 +5,7 @@
       :prop="action_name" 
       :report="report">
     </ExprEditorDialog>
-    <el-dialog v-draggable v-if="preview_dialogVisible" style="text-align: left;"
+    <el-dialog v-draggable v-if="preview_dialogVisible" style="text-align: left;" class="report_define"
         :visible.sync="preview_dialogVisible" :title="'预览'" 
             :close-on-click-modal="false"   :fullscreen="true"
               direction="btt" append-to-body  

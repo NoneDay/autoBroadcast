@@ -251,8 +251,14 @@ export default {
             return ret_s
           }
         }
-        else if(this.obj.resultType==='sum')
-          ret_s=ret_s+'.sum()["' +this.obj.sum_field+'"]'
+        else if(this.obj.resultType==='sum'){
+          if(this.obj.sum_field!="")
+            ret_s=ret_s+'.sum()["' +this.obj.sum_field+'"]'
+          else
+            ret_s=ret_s+'.sum().reset_index()'
+        }
+        else
+          ret_s=ret_s+".reset_index(drop=True)"
         return ret_s
       }
       return "==="
