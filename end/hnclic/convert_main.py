@@ -19,7 +19,10 @@ from openpyxl  import load_workbook
 import asyncio
 import aiohttp
 import yaml
-from handle_file import convert_file_for_xlsx,exec_template,convert_file_for_txt,convert_file_for_pptx,convert_html,get_jinja2_Environment,is_number
+from handle_file import convert_file_for_xlsx,exec_template,convert_file_for_txt,convert_file_for_pptx,convert_html
+from utils import get_jinja2_Environment,is_number
+import data_adapter
+
 '''
 “在Windows里，time.strftime使用C运行时的多字节字符串函数strftime，
 这个函数必须先根据当前locale配置来编码格式化字符串（使用PyUnicode_EncodeLocale）。”
@@ -74,45 +77,6 @@ def load_from_file(url,d_p):
         return ret
     raise Exception(url +'不存在')
 
-def load_from_url2_forJson(data_from=None,config_data=None,user_input_form_data=None,upload_path=None,userid=None):
-    soup_html = BeautifulSoup(test_html,features="lxml")    
-    #__expland_merge_cells(soup,p['pattern'])
-    text_html=test_string# _load_html_from_url(data_from,config_data,user_input_form_data)
-    soup_json =json.loads(text_html) #html_text
-    # soup.select("table")[0]['data-url']
-    
-    form_inputs=''
-    if data_from['ds'] is None or len(data_from['ds'])==0:
-        data_from['ds']=[{"t": "json","pattern": "rows","end": 10000,"start": 0,
-                "columns": "auto","view_columns": "","sort": "","name": "修改这里","old_columns":[]
-                }]
-        data_from['desc']=""
-        data_from['form_input']=''
-    ret={}
-    for p in data_from['ds']:
-        data=pd.DataFrame(soup_json[p['pattern']] if p['pattern']!="" else soup_json)
-        #将 json内的 名字转换为 table 内的名字
-        data.rename(columns={ x['data-field']:x.text.strip() for x in soup_html.select("table")[0].select("th") },inplace=True) 
-        # 按table 内的名字重排
-        data = data[ [ x.text.strip() for x in soup_html.select("table")[0].select("th") ] ]
-        header=data.columns.to_list()
-        #缺省列名为：s+数字
-        if isinstance(p['view_columns'],str):
-            data.columns=header if p['columns'].startswith("auto") else ['s'+str(x) for x in range(len(data.loc[0]))]
-            view_columns=str.strip(p['view_columns'])
-            if view_columns!="" :
-                data=data[[ (data.columns[int(x)] if x.isdigit() else x) for x in view_columns.split(',')]]
-        if isinstance(p['view_columns'],list):
-            if len(p['view_columns'])!=0 :
-                data=data[p['view_columns']]
-        if p.get("backup",'').strip()!='':
-                rptid=os.path.realpath(upload_path).split("\\")[-1]
-                bak_file=os.path.realpath(os.path.join(upload_path+"../../../过往数据/", f"{rptid}_{p['name']}"))
-                #if datetime.date.today()==one['from'][2:8]:#备份当前数据
-                data.to_csv(f"{bak_file}_{datetime.date.today().isoformat()}.csv",index=False)
-        ret[p['name']]={'data':data,'p':p,'header':header,'form_input':form_inputs,"data_from":data_from}
-    return ret
-
 @func_time
 async def load_from_url2(data_from=None,config_data=None,user_input_form_data=None,upload_path=None,userid=None):
     '''
@@ -123,7 +87,7 @@ async def load_from_url2(data_from=None,config_data=None,user_input_form_data=No
     针对t:html 的end,+4 表示需要4行,不带+号的4 ，表示第4行，负数表示从后面开始倒数几行，如果为空，表示全部，最多100万行
     '''
     for i in range(1,30):
-        html_text,response=await _load_html_from_url(data_from,config_data,user_input_form_data,userid)
+        html_text,response,cookies=await _load_html_from_url(data_from,config_data,user_input_form_data,userid)
         if html_text.find("查询报表出错")>=0:
             raise Exception(html_text)
         if(html_text.find('正在刷新缓存，请稍后再试')==-1):
@@ -138,94 +102,14 @@ async def load_from_url2(data_from=None,config_data=None,user_input_form_data=No
     is_cr_json=False
     if response.status!=200:
         raise LoadUrlError(html_text+"\n"+data_from['url'])
+    soup=None
     try:
-        #if response.content_type== 'application/json'
-        try:#新版报表可直接返回json，先按json处理，如果不能处理，就按老版本的方式处理
-            soup =json.loads(html_text)
-            form_inputs={  x['name']:"默认值" for x in soup['form'] }
-            
-            #isinstance(soup,dict)
-            is_cr_json=True
-            if data_from['ds'] is None or len(data_from['ds'])==0:
-                if isinstance(soup['data'],list):
-                    soup_first_data=soup['data'][0]
-                else:
-                    soup_first_data=[v for k,v in soup['data'].items() if v['type']!='htmlText'] [0]
-                data_from['ds']=[{"t": "json","pattern": soup_first_data['name'],"end": soup_first_data['extend_lines'][1]+1,
-                        "start": soup_first_data['colName_lines'][1]+1,"columns": "auto","view_columns": "","sort": "","name": "修改这里",
-                        "old_columns": soup_first_data['columns']}]
-                data_from['desc']=soup_first_data['title']
-                data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
-        except json.decoder.JSONDecodeError as identifier:
-            soup = lxml.html.fromstring(html_text) 
-            #查出来取数form所需要的参数，传递给前台设置到config中
-            form_inputs={x.attrib['name']:"默认值" for x in soup.xpath('//form/input|//form/select') }
-            print(f"{data_from['url']}分析html用时： {time.time()-start_time}")
-
-            if data_from['ds'] is None or len(data_from['ds'])==0:
-                t_p,ds_desc=_guess_ds(soup)
-                data_from['ds']=[t_p]
-                data_from['desc']=ds_desc
-                data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
-            print(f"{data_from['url']}_guess_ds用时： {time.time()-start_time}")
-        #使用原先定义的参数设置覆盖缺省的
-        form_inputs= {**form_inputs,**{x["name"]:x["value"] for x in data_from['form_input']}}
-        data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
-
-        pattern_dict={}
+        adapter=data_adapter.get(data_from,cookies)
+        soup=await adapter.pre_parse(html_text)
+        
         ret=dict()
         for p in data_from['ds']:
-            if(data_from['type']=='ZYT'):
-                data=pd.DataFrame(data['rows'])
-                header=data.columns.to_list()
-            elif is_cr_json:
-                pattern=p['pattern']
-                if pattern.startswith('#'):#兼容老格式，取出核心名字
-                    pattern=p['pattern'][10:p['pattern'].find("thetable")]
-                if isinstance(soup['data'],list):
-                    data=[x for x in soup['data'] if x is not None and x['name']==pattern][0]
-                else:
-                    data=soup['data'][pattern]
-                if data["type"]=="common":
-                    start=int(p['start'])
-                    end=1000000 if not p['end'] else( int(p['start'])+int(p['end'])   if isinstance(p['end'],str) and p['end'][0]=='+' else int(p['end']))
-                    header=data['columns']
-                    data=pd.DataFrame(data['tableData'][start:end],columns=header)                
-                elif data["type"]=="large":
-                    header=data['columns']
-                    data=pd.DataFrame(data['data'],columns=header)
-                p['data_is_json']=True
-
-            elif p['t']=="json":
-                start_pos=re.search(p['start'],html_text).regs[0][1]
-                end_pos=re.search("/\*-end-\*/" if p['end']=="/*-end-*/" else p['end'],html_text).regs[0][0]
-                try:
-                    t_json=json.loads(html_text[start_pos:end_pos].replace("\ufeff",""))
-                except json.decoder.JSONDecodeError as identifier: # 解析非标准JSON的Javascript字符串，等同于json.loads(JSON str)
-                    t_json=eval( html_text[start_pos:end_pos].replace("\ufeff","") , type('Dummy', (dict,), dict(__getitem__=lambda s, n: n))())
-                    #t_json=yaml.load(html_text[start_pos:end_pos].replace("\ufeff",""))
-                data=pd.DataFrame(t_json)
-                if 'id' in data.columns:
-                    data=data.drop(['id'], axis=1)
-                new_columns=data.columns.to_list()
-                new_columns.sort(key=lambda x:str(len(x))+x)
-                data=data[new_columns]
-                p['data_is_json']=True
-                if not pattern_dict.get(p['pattern']) :
-                    pattern_dict[p['pattern']]= __expland_merge_cells(soup,p['pattern'])
-                table_lines=pattern_dict[p['pattern']] 
-                header,_=__guess_col_names(table_lines,p['columns'])
-            elif p['t']=="html":
-                if not pattern_dict.get(p['pattern']) :
-                    pattern_dict[p['pattern']]= __expland_merge_cells(soup,p['pattern'])
-                table_lines=pattern_dict[p['pattern']] 
-                start=int(p['start'])
-                end= 1000000 if not p['end'] else( int(p['start'])+int(p['end'])   if  p['end'][0]=='+' else int(p['end']))
-                data=pd.DataFrame(table_lines[start:end])
-                header,_=__guess_col_names(table_lines,p['columns'],start)
-                p['data_is_json']=False
-            
-
+            header,data=adapter.load_data(p)
             #缺省列名为：s+数字
             if isinstance(p['view_columns'],str):
                 data.columns=header if p['columns']=='' or p['columns'].startswith("auto") else ['s'+str(x) for x in range(len(data.loc[0]))]
@@ -326,132 +210,15 @@ async def _load_html_from_url(data_from=None,config_data=None,user_input_form_da
     
         async with session.get(url,cookies=cookies,headers=headers) if (real_form_data is None or len(real_form_data) ==0) else session.post(url,data=real_form_data,cookies=cookies,headers=headers) \
             as response:
+            text=await response.text()
             end_time = time.time()
             print(f'{url}取数用时： {end_time-start_time}')
-            text=await response.text()
             if text.startswith("\ufeff"):
                 text=text[1:]
-            return text,response#,text_html.content_type,'text/html'
-
-def _guess_ds(soup):
-    '''
-    自动猜数据定义
-    '''
-    one_table=[x for x in soup.xpath('//table') if x.attrib.get("id",'').endswith('thetable')][0]
-    if one_table.attrib.has_key('data-options'):
-        if soup.text_content().find("/*-end-*/")>0:
-            t_p={"t": "json","pattern": "#"+one_table.attrib['id'],"start": one_table.attrib['id'][0:-len("thetable")] + "_data={\"rows\":",
-                "end": "/*-end-*/","columns": "auto","view_columns": "","sort": "","name": "修改这里",
-                "old_columns": []
-            }
-        else:
-            t_p={"t": "json","pattern": "#"+one_table.attrib['id'],"start": one_table.attrib['id'][0:-len("thetable")] + "_data={'total':'\\d+',\\n'rows':",
-                "end": "\\n};\\r\\n\\s+allTableArr.push","columns": "auto","view_columns": "","sort": "","name": "修改这里",
-                "old_columns": []
-            }            
-    else:
-        t_p={ "t": "html","name": "修改这里","pattern": "#"+one_table.attrib['id'],"sort": "","columns": "auto","view_columns":"","old_columns":[]}
-        #,"start": "4","end": "-3"
-    table_lines=__expland_merge_cells(soup,t_p['pattern'])
-    t_p['old_columns'],_=__guess_col_names(table_lines,t_p['columns'])    
-    if t_p['t']=='html':
-        start_line,end_line=-1,-1
-        for line_no,one_line in enumerate( table_lines):
-            if start_line==-1 and any([is_number(x) for x in one_line]):
-                start_line=line_no #找到含数字的行作为结束行
-            if start_line!=-1 and end_line==-1 and not any([is_number(x) for x in one_line]):
-                end_line=line_no #找到含数字的行作为结束行
-                break
-        t_p['start']=str(start_line)
-        t_p['end']=str(end_line-len(table_lines)) if end_line!=-1 else "10000"
-    return t_p,(''.join([x.text_content() for x in one_table.cssselect('tr:nth-child(1) td')])) .replace(u'\xa0', u' ').strip()
-        
-
-
-def __expland_merge_cells(soup,h_pattern):
-    '''
-    将合并单元格展开
-    '''
-    h_pattern=h_pattern.strip()
-    select_result=soup.cssselect(h_pattern)
-    if h_pattern.startswith('#'):#easyui的固定行列会导致有多个table，我们将他们的数据按行合并起来
-        if len(select_result)>0 and select_result[0].attrib.has_key('data-options'):
-            all_heads=[x for x in [__expland_merge_cells(one,'tr') for one in select_result[0].cssselect('thead')] if len(x)>0] #可以排除没有固定列的情况
-            return [ [y for x in one_line for y in x] for one_line in [x for x in zip(*all_heads) ] ]
-    #如果不是tr结尾，就自动添加一个上去
-    if not h_pattern.strip().endswith('tr'):
-        h_pattern=h_pattern+' tr'
-        select_result=soup.cssselect(h_pattern)
-    idex_t=[] #存储每行的展开合并单元格的数据
-    lines=len(select_result)
-    idex_t=[[]]*lines
-    for i_tr, tr in enumerate(select_result):
-        lj_col=0
-        for td in tr.xpath("th|td"):
-            i_col=int(td.attrib.get('colspan','1'))
-            i_row=int(td.attrib.get('rowspan','1'))
-            #保证有充足的地方存放数据
-            for x in range(i_row):
-                while len(idex_t[i_tr+x]) < lj_col+i_col : 
-                    idex_t[i_tr+x]=idex_t[i_tr+x]+[None]
-            for x in range(i_row):
-                for y in range(i_col):
-                    #保证有充足的地方存放数据
-                    try:
-                        while(lj_col+y>=len(idex_t[i_tr+x])):
-                             idex_t[i_tr+x]=idex_t[i_tr+x]+[None]
-                        while(idex_t[i_tr+x][lj_col+y] is not None):#找到第一个None的地方，填充
-                            lj_col=lj_col+1
-                            while(len(idex_t[i_tr+x]) < lj_col+i_col ):
-                                idex_t[i_tr+x]=idex_t[i_tr+x]+[None]
-                    except IndexError as e:
-                        print(e)
-                    #存放数据
-                    idex_t[i_tr+x][lj_col+y]="".join(td.text_content().split())#去除特殊字符的专业写法 "".join(str.strip(td.text)) #td.text.split()
-            lj_col=lj_col+i_col
-    return idex_t
-
+            return text,response,cookies#,text_html.content_type,'text/html'
 class LoadUrlError(RuntimeError):
     def __init__(self, arg):
         self.args = [arg]
-
-
-def __guess_col_names(all_lines,rule_str=None,end_line=None):
-    '''
-    猜测表头。end_line=None:找到含数字的行作为结束行,或找到最后一行结束
-    '''
-    if(end_line is None):end_line=len(all_lines)
-    for line_no,one_line in enumerate( all_lines):
-        if any([is_number(x) for x in one_line]):
-            end_line=line_no #找到含数字的行作为结束行
-            break
-    start_line=0
-    for x in all_lines[:end_line]:
-        t=set(x)
-        t.discard('') #前面只有一个cell的行是标题行。我们跳过去
-        if len(t)<2:start_line+=1
-        else:break
-    rule=0
-    if rule_str.startswith('auto'):#auto后面跟的数字，表示要去几行合并到一起后的文字作为列名
-        rule= end_line-start_line if rule_str=='auto' else int(rule_str[4:]) if is_number(rule_str[4:]) else 1
-    try:
-        ret=all_lines[end_line-1]
-    except:
-        raise LoadUrlError('没有正确取到数据，请检查设置，重新查询')
-    if rule>0:
-        df=pd.DataFrame.from_records(all_lines[end_line-rule:end_line])
-        for y in range(df.shape[1]):#列数
-            for x in range(df.shape[0]-1):#行数
-                if df.loc[x][y]==df.loc[x+1][y]:#去除同一列不同行上下相邻为同值的上一行的数据
-                    df.loc[x][y]=''
-        ret=df.sum().to_list()
-    else :
-        if rule<0:
-           return all_lines[end_line+rule:end_line]
-    def inner_func(x,y,i=0):
-        return x+[y] if y not in x else x+[y+str(i)] if (y+str(i)) not in x else inner_func(x,y,i+1)
-
-    return reduce(inner_func, [[], ] + ret) ,end_line #将重复的表头后面加上序号
 
 def appendData_and_execLastSql(one_ds,ret,upload_path):
     k=one_ds['name']
@@ -554,19 +321,19 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
                 continue        
             if one['type'] in ['json','html']:
                 tasks.append(load_from_url2(one,config_data,args,upload_path,userid))
-            #if one['type']=='json':
-            #   tasks.append(load_from_url2_forJson(one,config_data,args,upload_path,userid))
             if one['type']=='file':
                 filename=os.path.join(upload_path, one['url'])
                 ret={**ret,**load_from_file(filename,one['ds'])}
-        return await asyncio.gather(*tasks),ret
+        return await asyncio.gather(*tasks,return_exceptions=True),ret
         #status_list = loop.run_until_complete(asyncio.gather(*tasks))
-    try:#https://yanbin.blog/how-flask-work-with-asyncio/#more-10368 关于flask中的异步，这里讲的比较详细
-        status_list,ret=asyncio.run(_inner_task(ret)) 
-        for t in status_list:
+    #https://yanbin.blog/how-flask-work-with-asyncio/#more-10368 关于flask中的异步，这里讲的比较详细
+    status_list,ret=asyncio.run(_inner_task(ret)) 
+    for t in status_list:
+        if isinstance(t,dict):
             ret={**ret,**t}  
-    finally:
-        pass
+        if isinstance(t,Exception):
+            raise t
+ 
     #用已定义的全局参数，覆盖所有子取数的参数合集
     form_input={}
     for one in config_data['data_from']:
@@ -710,7 +477,7 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
                                                 excel_results[i_row + cell.row - cell_ranges[0][0].row][i_col+cell.column -cell_ranges[0][0].column]=cell.value
                                         continue
                                 excel_results[cell.row - cell_ranges[0][0].row][cell.column -cell_ranges[0][0].column]=cell.value
-                        header,end_line=__guess_col_names(excel_results,"auto")
+                        header,end_line=data_adapter.guess_col_names(excel_results,"auto")
                         data=pd.DataFrame(excel_results[end_line:],columns=header)
                         ret[one_ds['name']]={'data':data,'header':header,'p':one_ds}
                         one_ds['last_columns']=header
