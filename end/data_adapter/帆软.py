@@ -1,0 +1,182 @@
+import sys, os, re, json
+import yaml
+import lxml
+import lxml.html
+import time
+import asyncio,aiohttp
+from hnclic.utils import htmltableToArray,exec_template,get_real_form_data
+from DataInterface import DataInterface
+class MyDataInterface(DataInterface):
+    def __init__(self,data_from,userid,login_getData_template,user_password):
+        super().__init__(data_from,userid,login_getData_template,user_password)
+        self.soup=None
+        
+        
+ 
+    def parse(fr_sjon):
+        detail=fr_sjon['pageContent']['detail']
+        cellData=detail[0]['cellData']
+        pageLayoutInfo=detail[0]['pageLayoutInfo']
+        table_result=[]
+        for r in range(pageLayoutInfo['rowCount']):
+            row=[]
+            table_result.append(row)
+            for c in range(pageLayoutInfo['colCount']):
+                row.append(None)
+
+        for tr in cellData['rows']:
+            for td in tr['cells']:
+                row=td['row']
+                col=td['col']
+                for r_i in range(td['rowSpan']):
+                    for c_i in range(td['colSpan']):
+                        v=td.get('text')
+                        if td.get('isnumber'):
+                            v=float(v)
+                            int_v=int(v)
+                            if(int_v==v):
+                                v=int_v
+                        table_result[row+r_i][col+c_i]=v
+        show_columms=[]
+        
+        for idx,cw in enumerate(pageLayoutInfo['colWidth']) :
+            if cw!=0:
+                show_columms.append(idx)
+        ret=[]
+        for tr in table_result :
+            td_list=[]
+            ret.append(td_list)
+            for idx,td in enumerate(tr):
+                if idx in show_columms:
+                    td_list.append(td)
+        return
+
+
+    async def getData(self,url,input_params={}):
+        url_head=re.search("^http[s]?:[\d]*//[\w|\W|\.]+?/\w+/",url)[0]
+        login_data=self.login_data
+        async with self.session.get(url,proxy=self.proxy,headers=self.next_headers,cookies=self.next_cookies) as html_response:
+            html_text=await html_response.text()
+            self.next_headers['sessionID']=re.search("this.currentSessionID[\s]*=[\s]*\'(.*)\'",html_text)[1]
+            param_result=re.search("this\.loadReportPane\(([\s|\S]*)\);(\s)*\}\)\.apply\(contentPane\);",html_text,re.M)[1]
+        
+        param_json=yaml.unsafe_load(re.sub("\"listeners\":[\s|\S]*?\"useBookMark\"","\"useBookMark\"", param_result))['param']#['html']['items']
+        form_inputs={}
+        if param_json.get('html') and param_json['html'].get('items'):
+            for one_param in param_json['html']['items']:
+                if one_param['type']=='formsubmit':
+                    continue
+                if one_param['type']=='combo' and one_param.get('controlAttr'):
+                    real_value=list(filter(lambda x:x['text']==one_param['value'],one_param['controlAttr']['data']))
+                    if len(real_value)>0:
+                        form_inputs[one_param['widgetName']]=real_value[0]['value']
+                    continue
+                elif one_param['type'] in ['label','text']:
+                    form_inputs[one_param['widgetName']]=one_param['value']#todo:转unicode 用[]包起来每一个汉字
+                elif one_param['type'] in ['number']:
+                    form_inputs[one_param['widgetName']]=int(one_param['value'])#todo:转unicode 用[]包起来每一个汉字
+                else:
+                    raise RuntimeError("没有这种类型转换："+one_param['type'])
+            #先提交参数
+            form_data={"__parameters__":json.dumps({**form_inputs,**input_params})}
+            param_url=f"{url_head}view/report?op=fr_dialog&cmd=parameters_d"
+            async with self.session.post(param_url,data=form_data,proxy=self.proxy,headers={**self.next_headers,**{'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8'}}) as param_url_response:
+                pass
+        title=None
+        combin_tableArray=[]
+        for pn in range(1,10000):#处理分页，默认最大10000页，或者帆软返回数据中指定的最大页
+            report_url_post=f"{url_head}view/report?_={str(int(time.time()))}&__boxModel__=true&op=page_content&pn={pn}&__webpage__=true&_paperWidth=1280&_paperHeight=127&__fit__=false"
+            async with self.session.get(report_url_post,proxy=self.proxy,headers=self.next_headers,cookies=self.next_cookies) as json_response:
+                result=json.loads(await json_response.text())['html']
+            reportTotalPage=int(re.search("FR\._p\.reportTotalPage=([\d]+)",result)[1])
+
+            soup= lxml.html.fromstring(result) 
+            table_lines=soup.cssselect(".pageContentDIV .page-block")[0]
+            if table_lines.attrib.get("class").find("frozen-page")<0:
+                table_lines=table_lines.cssselect("table tr")
+                tableArray=htmltableToArray(table_lines)
+            else:#多片的
+                # frozen-corner north west center
+                table_inner=table_lines.cssselect("#frozen-corner table tr")
+                corner_tableArray=htmltableToArray(table_inner)
+                
+                table_inner=table_lines.cssselect("#frozen-north table tr")
+                north_tableArray=htmltableToArray(table_inner)
+                
+                table_inner=table_lines.cssselect("#frozen-west table tr")
+                west_tableArray=htmltableToArray(table_inner)
+                
+                table_inner=table_lines.cssselect("#frozen-center table tr")
+                center_tableArray=htmltableToArray(table_inner)
+                
+                tableArray=[]
+                for i in range(max(len(corner_tableArray),len(north_tableArray))):
+                    tr1=[] if i>=len(corner_tableArray) else corner_tableArray[i]
+                    tr2=[] if i>=len(north_tableArray) else north_tableArray[i]
+                    tableArray.append(tr1 + tr2 )
+
+                for i in range(max(len(west_tableArray),len(center_tableArray))):
+                    tr1=[] if i>=len(west_tableArray) else west_tableArray[i]
+                    tr2=[] if i>=len(center_tableArray) else center_tableArray[i]
+                    tableArray.append(tr1 + tr2 )
+            
+            lasttableArray=[]
+            for one_line in tableArray:
+                td_set=set(one_line)
+                if '' in td_set:
+                    td_set.remove('')
+                if len(td_set)==0:
+                    continue
+                if title is None and   len(td_set)==1:
+                    title=list(td_set)[0]
+                    continue
+                if title is not None and len(td_set)==1:
+                    continue
+                lasttableArray.append(one_line)
+            combin_tableArray.append(lasttableArray)
+            if pn>=reportTotalPage:
+                break
+        if len(combin_tableArray)==1:
+            return combin_tableArray[0],form_inputs
+
+        end=False
+        for i in range(10):#表头行数，最大10行就不再处理
+            base_set=None
+            for one in combin_tableArray:
+                if base_set is None:
+                    base_set=set(one[i])
+                    continue
+                if base_set!=set(one[i]):
+                    end=True
+                    break
+            if end:
+                break
+        end_line=i        
+        ret=combin_tableArray[0]
+        for i in range(1,len(combin_tableArray)):#合并所有的页到一个数据集
+            ret=ret+combin_tableArray[i][end_line:]
+        return ret,form_inputs
+
+if __name__ == '__main__':
+    #DENHF1WCTpFh6DZG/ML6Pw==
+    #with open("C:\\其他省的\\帆软.json", 'r',encoding="utf8") as f:
+    #    html_text = f.read()
+    #parse(json.loads(html_text))
+    #分页
+    #data=getData("http://demo.finereport.com/decision/v10/entry/access/old-platform-reportlet-entry-602?width=1040&height=351")
+    #多片
+    #data=getData("http://demo.finereport.com/decision/v10/entry/access/44963dba-b642-4135-b730-878f6ee96ebf?width=1040&height=351")
+    # 分页
+    #data=getData("http://demo.finereport.com/decision/v10/entry/access/old-platform-reportlet-entry-606?width=1040&height=838")
+    # 分栏合计
+    #data=getData("http://demo.finereport.com/decision/v10/entry/access/old-platform-reportlet-entry-610?width=1040&height=838")
+    # 同比环比
+    #data=getData("http://demo.finereport.com/decision/v10/entry/access/old-platform-reportlet-entry-605?width=1040&height=838")
+    #参数 combo label
+    #data=getData("http://demo.finereport.com/decision/v10/entry/access/old-platform-reportlet-entry-618?width=1040&height=838",{"YEAR":"10"})
+    #参数 text
+    #data=getData("http://demo.finereport.com/decision/v10/entry/access/old-platform-reportlet-entry-621?width=1680&height=894")
+    #参数 number
+    data=getData("http://demo.finereport.com/decision/v10/entry/access/old-platform-reportlet-entry-622?width=1680&height=894")
+    
+    pass

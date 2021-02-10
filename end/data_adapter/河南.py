@@ -8,33 +8,48 @@ import sys
 import time
 import zipfile
 from functools import reduce
-
 import aiohttp
-import comtypes.client
 import lxml
 import lxml.html
-import pandas as pd
 import requests
 import yaml
-from hnclic.utils import is_number,guess_col_names
+from hnclic.utils import is_number,guess_col_names,htmltableToArray,exec_template,get_real_form_data
+
+from DataInterface import DataInterface
+
+class LoadUrlError(RuntimeError):
+    def __init__(self, arg):
+        self.args = [arg]
 
 
-class HeNan():
-    def __init__(self,data_from,cookies):
+class MyDataInterface(DataInterface):
+    def __init__(self,data_from,userid,login_getData_template,user_password):
+        super().__init__(data_from,userid,login_getData_template,user_password)
         self.is_cr_json=False
         self.soup=None
         self.start_time = time.time()
         self.pattern_dict={}
-        self.data_from=data_from
-        self.cookies=cookies
-
-    async def pre_parse(self,html_text):
+    async def getData(self,url,input_params={}):        
+        for i in range(1,30):
+            self.html_text,response_content_type,response_status=await self._load_html(url,input_params)
+            if self.html_text.find("查询报表出错")>=0:
+                raise Exception(self.html_text)
+            if(self.html_text.find('正在刷新缓存，请稍后再试')==-1):
+                break
+            else:
+                print("message:正在刷新缓存，5秒后再试")
+                await asyncio.sleep(5)
+        if(self.html_text.find('正在刷新缓存，请稍后再试')>=0):
+            raise LoadUrlError('没有正确取到数据，请检查设置，重新查询')
+        if response_status!=200:
+            raise LoadUrlError(self.html_text+"\n"+self.data_from['url'])
+       
         data_from=self.data_from
-        try:#新版报表可直接返回json，先按json处理，如果不能处理，就按老版本的方式处理
-            self.soup =json.loads(html_text)
+        #新版报表可直接返回json，先按json处理，如果不能处理，就按老版本的方式处理
+        if response_content_type=='application/json':
+            self.soup =json.loads(self.html_text)
             form_inputs={  x['name']:"默认值" for x in self.soup['form'] }
             
-            #isinstance(self.soup,dict)
             self.is_cr_json=True
             if data_from['ds'] is None or len(data_from['ds'])==0:
                 if isinstance(self.soup['data'],list):
@@ -46,16 +61,14 @@ class HeNan():
                         "old_columns": soup_first_data['columns']}]
                 data_from['desc']=soup_first_data['title']
                 data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
-        except json.decoder.JSONDecodeError as identifier:
-            self.soup = lxml.html.fromstring(html_text) 
+        else:
+            self.soup = lxml.html.fromstring(self.html_text) 
             #查出来取数form所需要的参数，传递给前台设置到config中
             form_inputs={x.attrib['name']:"默认值" for x in self.soup.xpath('//form/input|//form/select') }
             print(f"{data_from['url']}分析html用时： {time.time()-self.start_time}")
 
             if data_from['ds'] is None or len(data_from['ds'])==0:
-                t_p,ds_desc=self._guess_ds()
-                data_from['ds']=[t_p]
-                data_from['desc']=ds_desc
+                data_from['ds'],data_from['desc']=self._guess_ds()
                 data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
             print(f"{data_from['url']}_guess_ds用时： {time.time()-self.start_time}")
         #使用原先定义的参数设置覆盖缺省的
@@ -63,54 +76,73 @@ class HeNan():
         data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
         return self.soup
 
-    def load_data(self,p):
-        if self.is_cr_json:
+    async def _load_html(self,url,input_params):
+        '''
+        先模拟登陆，然后访问真正的网址
+        '''        
+        start_time=time.time()
+        cookies={}
+        data_from=self.data_from
+        if data_from.get('grant_url') is not None and data_from.get('grant_url').strip()!="" :#授权url，获取cookies ，让取数url带过去
+            real_form_data=None if data_from.get('grant_form_input') is None else {x['name']:x['value'] for x in data_from['grant_form_input']}
+            async with self.session.get(data_from['grant_url']) if (real_form_data is None or len(real_form_data) ==0) else \
+                        self.session.post(data_from['grant_url'],data=real_form_data) as text_html:
+                cookies=text_html.cookies
+
+        cookies={**self.next_cookies,**cookies}
+        async with self.session.get(url,cookies=cookies,headers=self.next_headers) if (input_params is None or len(input_params) ==0) \
+                else self.session.post(url,data=input_params,cookies=cookies,headers=self.next_headers) as response:
+            text=await response.text()
+            print(f'{url}取数用时： {time.time()-start_time}')
+            if text.startswith("\ufeff"):
+                text=text[1:]
+            return text,response.content_type,response.status #,text_html.content_type,'text/html'
+
+    def load_data_for_p(self,p):
+        if self.is_cr_json:#这是我的新报表的数据格式分析
             pattern=p['pattern']
             if pattern.startswith('#'):#兼容老格式，取出核心名字
                 pattern=p['pattern'][10:p['pattern'].find("thetable")]
             if isinstance(self.soup['data'],list):
-                data=[x for x in self.soup['data'] if x is not None and x['name']==pattern][0]
+                data=[x for x in self.soup['data'] if x is not None and x['name']==pattern]
+                if len(data)==0:
+                    raise RuntimeError("数据集<"+p["name"]+">无数据，请检查设置是否正确.通常做法：删除你手工建的数据集，然后直接点击查看数据就可以自动生成。")
+                data=data[0]
             else:
                 data=self.soup['data'][pattern]
-                
+
+            p['data_is_json']=True    
             if data["type"]=="common":
                 start=int(p['start'])
                 end=1000000 if not p['end'] else( int(p['start'])+int(p['end'])   if isinstance(p['end'],str) and p['end'][0]=='+' else int(p['end']))
-                header=data['columns']
-                data=pd.DataFrame(data['tableData'][start:end],columns=header)                
+                return "TableModel",data['columns'],data['tableData'][start:end],None
             elif data["type"]=="large":
-                header=data['columns']
-                data=pd.DataFrame(data['data'],columns=header)
-            p['data_is_json']=True
-        elif p['t']=="json":
-            start_pos=re.search(p['start'],html_text).regs[0][1]
-            end_pos=re.search("/\*-end-\*/" if p['end']=="/*-end-*/" else p['end'],html_text).regs[0][0]
+                return "TableModel",data['columns'],data['data'],None
+        elif p['t']=="json":#这是老格式的大数据报表分析
+            start_pos=re.search(p['start'],self.html_text).regs[0][1]
+            end_pos=re.search("/\*-end-\*/" if p['end']=="/*-end-*/" else p['end'],self.html_text).regs[0][0]
             try:
-                t_json=json.loads(html_text[start_pos:end_pos].replace("\ufeff",""))
+                t_json=json.loads(self.html_text[start_pos:end_pos].replace("\ufeff",""))
             except json.decoder.JSONDecodeError as identifier: # 解析非标准JSON的Javascript字符串，等同于json.loads(JSON str)
-                t_json=eval( html_text[start_pos:end_pos].replace("\ufeff","") , type('Dummy', (dict,), dict(__getitem__=lambda s, n: n))())
+                t_json=eval( self.html_text[start_pos:end_pos].replace("\ufeff","") , type('Dummy', (dict,), dict(__getitem__=lambda s, n: n))())
                 #t_json=yaml.load(html_text[start_pos:end_pos].replace("\ufeff",""))
-            data=pd.DataFrame(t_json)
-            if 'id' in data.columns:
-                data=data.drop(['id'], axis=1)
-            new_columns=data.columns.to_list()
-            new_columns.sort(key=lambda x:str(len(x))+x)
-            data=data[new_columns]
+            json_props=[x for x in t_json[0]]
+            json_props.sort(key=lambda x:str(len(x))+x)
             p['data_is_json']=True
             if not self.pattern_dict.get(p['pattern']) :
-                self.pattern_dict[p['pattern']]= HeNan.__expland_merge_cells(self.soup,p['pattern'])
+                self.pattern_dict[p['pattern']]= MyDataInterface.__expland_merge_cells(self.soup,p['pattern'])
             table_lines=self.pattern_dict[p['pattern']] 
-            header,_=guess_col_names(table_lines,p['columns'])
-        elif p['t']=="html":
+            header,_=guess_col_names(table_lines,p['columns']) #json模式。有列名和json属性的的对照
+            return "JsonModel",header,t_json,json_props
+        elif p['t']=="html":#这是老格式的自由数据报表分析
             if not self.pattern_dict.get(p['pattern']) :
-                self.pattern_dict[p['pattern']]= HeNan.__expland_merge_cells(self.soup,p['pattern'])
+                self.pattern_dict[p['pattern']]= MyDataInterface.__expland_merge_cells(self.soup,p['pattern'])
             table_lines=self.pattern_dict[p['pattern']] 
             start=int(p['start'])
             end= 1000000 if not p['end'] else( int(p['start'])+int(p['end'])   if  p['end'][0]=='+' else int(p['end']))
-            data=pd.DataFrame(table_lines[start:end])
             header,_=guess_col_names(table_lines,p['columns'],start)
-            p['data_is_json']=False   
-        return header,data
+            p['data_is_json']=False   #table模式。有列名和明细数据的的表模式
+            return "TableModel",header,table_lines[start:end],None
     
     def _guess_ds(self):
         '''
@@ -131,7 +163,7 @@ class HeNan():
         else:
             t_p={ "t": "html","name": "修改这里","pattern": "#"+one_table.attrib['id'],"sort": "","columns": "auto","view_columns":"","old_columns":[]}
             #,"start": "4","end": "-3"
-        table_lines=HeNan.__expland_merge_cells(self.soup,t_p['pattern'])
+        table_lines=MyDataInterface.__expland_merge_cells(self.soup,t_p['pattern'])
         t_p['old_columns'],_=guess_col_names(table_lines,t_p['columns'])    
         if t_p['t']=='html':
             start_line,end_line=-1,-1
@@ -143,7 +175,7 @@ class HeNan():
                     break
             t_p['start']=str(start_line)
             t_p['end']=str(end_line-len(table_lines)) if end_line!=-1 else "10000"
-        return t_p,(''.join([x.text_content() for x in one_table.cssselect('tr:nth-child(1) td')])) .replace(u'\xa0', u' ').strip()
+        return [t_p],(''.join([x.text_content() for x in one_table.cssselect('tr:nth-child(1) td')])) .replace(u'\xa0', u' ').strip()
             
 
     @staticmethod
@@ -155,39 +187,11 @@ class HeNan():
         select_result=soup.cssselect(h_pattern)
         if h_pattern.startswith('#'):#easyui的固定行列会导致有多个table，我们将他们的数据按行合并起来
             if len(select_result)>0 and select_result[0].attrib.has_key('data-options'):
-                all_heads=[x for x in [HeNan.__expland_merge_cells(one,'tr') for one in select_result[0].cssselect('thead')] if len(x)>0] #可以排除没有固定列的情况
+                #可以排除没有固定列的情况
+                all_heads=[x for x in [MyDataInterface.__expland_merge_cells(one,'tr') for one in select_result[0].cssselect('thead')] if len(x)>0]
                 return [ [y for x in one_line for y in x] for one_line in [x for x in zip(*all_heads) ] ]
         #如果不是tr结尾，就自动添加一个上去
         if not h_pattern.strip().endswith('tr'):
             h_pattern=h_pattern+' tr'
             select_result=soup.cssselect(h_pattern)
-        idex_t=[] #存储每行的展开合并单元格的数据
-        lines=len(select_result)
-        idex_t=[[]]*lines
-        for i_tr, tr in enumerate(select_result):
-            lj_col=0
-            for td in tr.xpath("th|td"):
-                i_col=int(td.attrib.get('colspan','1'))
-                i_row=int(td.attrib.get('rowspan','1'))
-                #保证有充足的地方存放数据
-                for x in range(i_row):
-                    while len(idex_t[i_tr+x]) < lj_col+i_col : 
-                        idex_t[i_tr+x]=idex_t[i_tr+x]+[None]
-                for x in range(i_row):
-                    for y in range(i_col):
-                        #保证有充足的地方存放数据
-                        try:
-                            while(lj_col+y>=len(idex_t[i_tr+x])):
-                                idex_t[i_tr+x]=idex_t[i_tr+x]+[None]
-                            while(idex_t[i_tr+x][lj_col+y] is not None):#找到第一个None的地方，填充
-                                lj_col=lj_col+1
-                                while(len(idex_t[i_tr+x]) < lj_col+i_col ):
-                                    idex_t[i_tr+x]=idex_t[i_tr+x]+[None]
-                        except IndexError as e:
-                            print(e)
-                        #存放数据
-                        idex_t[i_tr+x][lj_col+y]="".join(td.text_content().split())#去除特殊字符的专业写法 "".join(str.strip(td.text)) #td.text.split()
-                lj_col=lj_col+i_col
-        return idex_t
-    
-
+        return htmltableToArray(select_result)

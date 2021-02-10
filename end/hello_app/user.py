@@ -128,8 +128,8 @@ def raw_get(id,rawtype,ds_names):
             config_data= json.loads(cursor.fetchone()['config_txt'])
     #for one_data_from in json.loads(cur_row['config_txt'])['data_from'] for one on one_data_from['ds'] is one['name'] in ds_names
     args={**request.args,**request.form}
-    ds_dict=ce.load_all_data(config_data,id,args=args,upload_path=glb.user_report_upload_path(id),userid=glb.ini['user_login']['test_user'])
-    ret_dict=dict({key:value['data'] for key,value in ds_dict.items() if key in ds_names})
+    ret,ds_dict=ce.load_all_data(config_data,id,args=args,upload_path=glb.user_report_upload_path(id),userid=glb.ini['user_login']['test_user'])
+    ret_dict=dict({key:value['data'] for key,value in ret.items() if key in ds_names})
     rawtype=rawtype.split(":")
     ret_str='{"errcode":0,"message":"success",'
     if rawtype[0]=='json':

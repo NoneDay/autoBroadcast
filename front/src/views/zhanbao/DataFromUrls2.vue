@@ -147,7 +147,38 @@ export default {
           this.dataFrom.push(element);  
         });        
       })
-    }
+    },
+    typeForUrl(url){
+    let type_dict=
+    [
+      {'type': "帆软",
+      'pattern':"http://demo.finereport.com/decision/",
+      'login_data_template':'{"username":"{{username}}","password":"{{password}}","validity":-1,"sliderToken":"","origin":"","encrypted":false}',
+      'login_data_type':"json",//form
+      'login_url':"http://demo.finereport.com/decision/login",
+      "login_headers":`{
+            'Accept': 'application/json, text/javascript, */*; q=0.01'
+            ,'Accept-Encoding': 'gzip, deflate'
+            ,'Accept-Language': 'zh-CN,zh;q=0.9'
+            ,'Cache-Control': 'no-cache'
+            ,'Content-Type': 'application/json'
+            ,'Cookie': 'fine_remember_login=-1'
+            ,'Proxy-Connection': 'keep-alive'
+            ,'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36'
+            ,'X-Requested-With': 'XMLHttpRequest'
+        }`,
+      "login_success":"",
+      'next_headers':'{"Authorization": "Bearer {{login_data["data"]["accessToken"]}}"}',
+      "next_cookies":'{"fine_remember_login":-1,"fine_auth_token":"{{login_data["data"]["accessToken"]}}" }',
+      },
+    ]
+    let result=[]
+    type_dict.forEach(ele => {
+        if(ele.pattern.test(url))
+            result.push(ele)
+    });
+    return result
+}
 
   }
 

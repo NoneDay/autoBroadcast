@@ -1,3 +1,4 @@
 {
-    "python.pythonPath": "E:\\ProgramData\\Anaconda3\\envs\\my_flask2\\python.exe"
+    "python.pythonPath": "E:\\ProgramData\\Anaconda3\\envs\\my_flask2\\python.exe",
+    "editor.fontSize": 12
 }

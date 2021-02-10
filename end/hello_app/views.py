@@ -54,7 +54,7 @@ def load_one_data(config_data,data_from,param,curr_report_id):
     #    ret=ce.load_all_data(config_data,upload_path=user_report_upload_path(curr_report_id))#user_report_upload_path
     glb.redis.sadd("zb:executing",curr_report_id)
     try:
-        ret=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])#user_report_upload_path
+        ret,ds_dict=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])#user_report_upload_path
         return ret[param['name']] if param is not None and param.get('name','')!='' else ret['修改这里']#list(ret.values())[-1]
     finally:
         glb.redis.srem("zb:executing",curr_report_id)
@@ -64,7 +64,7 @@ def text_template_exec():
     id=request.json['curr_report_id']
     glb.redis.sadd("zb:executing",id)
     try:
-        ret_dataset=ce.load_all_data(request.json['config_data'],upload_path=glb.user_report_upload_path(request.json['curr_report_id']),userid=session['userid'])
+        ret_dataset,ds_dict=ce.load_all_data(request.json['config_data'],upload_path=glb.user_report_upload_path(request.json['curr_report_id']),userid=session['userid'])
         env = ce.get_jinja2_Environment()
         template = env.from_string(request.json['text_template'])
         result=template.render(**{k:v['data'] for k,v in ret_dataset.items()})

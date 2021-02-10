@@ -1,10 +1,11 @@
 import sys, os, zipfile,re, requests,shutil,json,glob
 sys.path.append(os.path.realpath(os.curdir+"/hello_app/"))
 sys.path.append(os.path.realpath(os.curdir+"/hnclic/"))
+sys.path.append(os.path.realpath(os.curdir+"/data_adapter/"))
 from bs4 import BeautifulSoup
 import lxml
 import lxml.html
-
+import threading
 import numpy as np
 import pandas as pd
 import pandasql,excel2img
@@ -19,10 +20,10 @@ from openpyxl  import load_workbook
 import asyncio
 import aiohttp
 import yaml
-from handle_file import convert_file_for_xlsx,exec_template,convert_file_for_txt,convert_file_for_pptx,convert_html
-from utils import get_jinja2_Environment,is_number
+from handle_file import convert_file_for_xlsx,convert_file_for_txt,convert_file_for_pptx,convert_html
+from utils import get_jinja2_Environment,is_number,guess_col_names,exec_template
 import data_adapter
-
+import colorama 
 '''
 “在Windows里，time.strftime使用C运行时的多字节字符串函数strftime，
 这个函数必须先根据当前locale配置来编码格式化字符串（使用PyUnicode_EncodeLocale）。”
@@ -43,7 +44,7 @@ def func_time(func):
         start_time = time.time()
         ret=func(*args,**kw)
         end_time = time.time()
-        print(str(func)+'函数运行时间为：',end_time-start_time,'s')
+        print(str(func)+'函数运行时间为：'+str(end_time-start_time)+'s')
         return ret
     return inner
 
@@ -77,8 +78,7 @@ def load_from_file(url,d_p):
         return ret
     raise Exception(url +'不存在')
 
-@func_time
-async def load_from_url2(data_from=None,config_data=None,user_input_form_data=None,upload_path=None,userid=None):
+async def load_from_url2(data_from=None,config_data=None,upload_path=None,userid=None,user_input_form_data=None):
     '''
     data_from 某网址下的取数逻辑总汇
     user_input_form_data 实际传过来的参数
@@ -86,139 +86,76 @@ async def load_from_url2(data_from=None,config_data=None,user_input_form_data=No
     d_p_2={'t':'html','name':'a','pattern':'#reportDivmainthetable tr','start':4,'end':18}
     针对t:html 的end,+4 表示需要4行,不带+号的4 ，表示第4行，负数表示从后面开始倒数几行，如果为空，表示全部，最多100万行
     '''
-    for i in range(1,30):
-        html_text,response,cookies=await _load_html_from_url(data_from,config_data,user_input_form_data,userid)
-        if html_text.find("查询报表出错")>=0:
-            raise Exception(html_text)
-        if(html_text.find('正在刷新缓存，请稍后再试')==-1):
-            break
-        else:
-            print("message:正在刷新缓存，5秒后再试")
-            await asyncio.sleep(5)
-    if(html_text.find('正在刷新缓存，请稍后再试')>=0):
-        raise LoadUrlError('没有正确取到数据，请检查设置，重新查询')
+    adapter=data_adapter.get(data_from,userid)
+    await adapter.load_data_from_url(config_data.get('form_input',{}),user_input_form_data)
+    #    if soup is not None and isinstance(soup,BeautifulSoup):
+    #        soup.decompose()
+    #        soup=None
     print("成功")
-    start_time = time.time()
-    is_cr_json=False
-    if response.status!=200:
-        raise LoadUrlError(html_text+"\n"+data_from['url'])
-    soup=None
-    try:
-        adapter=data_adapter.get(data_from,cookies)
-        soup=await adapter.pre_parse(html_text)
-        
-        ret=dict()
-        for p in data_from['ds']:
-            header,data=adapter.load_data(p)
-            #缺省列名为：s+数字
-            if isinstance(p['view_columns'],str):
-                data.columns=header if p['columns']=='' or p['columns'].startswith("auto") else ['s'+str(x) for x in range(len(data.loc[0]))]
-                view_columns=str.strip(p['view_columns'])
-                if view_columns!="" :
-                    view_set=set(view_columns.split(',') )
-                    data_set=set(data.columns)
-                    if len(view_set- data_set )>0:
-                        raise RuntimeError(f"{p['name']}以下列已经被删除：({str(view_set- data_set)})。新增的列({str(data_set - view_set)} )" )
-                    data=data[[ (data.columns[int(x)] if x.isdigit() else x) for x in view_columns.split(',')]]
-            if isinstance(p['view_columns'],list):
-                if len(p['view_columns'])!=0 :
-                    data=data[p['view_columns']]
+    ret=dict()
+    for p in data_from['ds']:
+        resultModel,header,data,json_props=adapter.load_data_for_p(p)
+        if resultModel=="TableModel":
+            data=pd.DataFrame(data,columns=header)
+        elif resultModel=="JsonModel":
+            data=pd.DataFrame(data)[json_props] #按json_props中指定的顺序重排
+            data.columns=header#按header重设列名
+            if 'id' in json_props:
+                data=data.drop(['id'], axis=1)
+        else:
+            raise RuntimeError("适配接口只能返回TableModel或者JsonModel。请联系管理员修改程序")
 
-            key_column=p.get('key_column')
-            if key_column is None:
-                for key in data.columns :
-                    if str(data[key].dtype)=='object' and  len(data[key].unique())==len(data):
-                        key_column=key
-                        break
-            if key_column is None:
-                key_column=data.columns[0]
-            if key_column not in data.columns:
-                raise Exception(f"{p['name']}的关键字{key_column} 不在可视列表中！通常是原始报表的列名被修改了，你可以在《查看列名》的地方，将主键选为key，清空《最终数据整理》中的信息，重新执行就可以了。")
-            p['key_column']=key_column
-            data=data[(data[key_column]!='') & (data[key_column].isnull()==False)].reset_index(drop=True)
-            data=data.replace('','None')#先删除主键为空的情况，然后其他为字符串空替换为None
-            if p.get("backup",'').strip()!='':
-                    rptid=os.path.realpath(upload_path).split("\\")[-1]
-                    bak_file=os.path.realpath(os.path.join(upload_path+"../../../过往数据/", f"{rptid}_{p['name']}"))
-                    if os.path.exists(f"{bak_file}_上次.json"):
-                        os.remove(f"{bak_file}_上次.json")
-                    if os.path.exists(f"{bak_file}_上次_new.json"):
-                        os.rename(f"{bak_file}_上次_new.json",f"{bak_file}_上次.json")
-                    cur_bak_list=sorted(glob.glob(f"{bak_file}*"),key=os.path.getmtime)
-                    cur_bak_list=[x for x in cur_bak_list if x!=f"{bak_file}_上次_new.json"]
-                    if len(cur_bak_list)!=0:#只记当天的增量
-                        if (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(cur_bak_list[-1]) )).days ==0:
-                            shutil.copyfile( cur_bak_list[-1] , f"{bak_file}_上次_new.json")
-                    for one_file in cur_bak_list: #删除 超过8天的历史数据
-                        if (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(one_file) )).days >9:
-                            os.remove(one_file)
-                    #if datetime.date.today()==one['from'][2:8]:#备份当前数据
-                    with open(f"{bak_file}_{datetime.date.today().isoformat()}.json", 'w') as f:
-                        f.write(data.to_json(orient='records',force_ascii=False))
-                    #data.to_csv(f"{bak_file}.csv",index=False)
-            p['old_columns']=header
+        #缺省列名为：s+数字
+        if isinstance(p['view_columns'],str):
+            data.columns=header if p['columns']=='' or p['columns'].startswith("auto") else [('s'+str(x) if is_number(x) else x) for x in range(len(data.loc[0]))]
+            view_columns=str.strip(p['view_columns'])
+            if view_columns!="" :
+                view_set=set(view_columns.split(',') )
+                data_set=set(data.columns)
+                if len(view_set- data_set )>0:
+                    raise RuntimeError(f"{p['name']}以下列已经被删除：{str(view_set- data_set)}。新增的列:{str(data_set - set(p['old_columns']))} " )
+                data=data[[ (data.columns[int(x)] if x.isdigit() else x) for x in view_columns.split(',')]]
+        if isinstance(p['view_columns'],list):
+            if len(p['view_columns'])!=0 :
+                data=data[p['view_columns']]
 
-            ret[p['name']]={'data':data,'p':p,'header':header,'form_input':data_from['form_input'],"data_from":data_from}            
-        return ret
-    finally:
-        if soup is not None and isinstance(soup,BeautifulSoup):
-            soup.decompose()
-            soup=None
+        key_column=p.get('key_column')
+        if key_column is None:
+            for key in data.columns :
+                if str(data[key].dtype)=='object' and  len(data[key].unique())==len(data):
+                    key_column=key
+                    break
+        if key_column is None:
+            key_column=data.columns[0]
+        if key_column not in data.columns:
+            raise Exception(f"{p['name']}的关键字{key_column} 不在可视列表中！通常是原始报表的列名被修改了，你可以在《查看列名》的地方，将主键选为key，清空《最终数据整理》中的信息，重新执行就可以了。")
+        p['key_column']=key_column
+        data=data[(data[key_column]!='') & (data[key_column].isnull()==False)].reset_index(drop=True)
+        data=data.replace('','None')#先删除主键为空的情况，然后其他为字符串空替换为None
+        if p.get("backup",'').strip()!='':
+                rptid=os.path.realpath(upload_path).split("\\")[-1]
+                bak_file=os.path.realpath(os.path.join(upload_path+"../../../过往数据/", f"{rptid}_{p['name']}"))
+                if os.path.exists(f"{bak_file}_上次.json"):
+                    os.remove(f"{bak_file}_上次.json")
+                if os.path.exists(f"{bak_file}_上次_new.json"):
+                    os.rename(f"{bak_file}_上次_new.json",f"{bak_file}_上次.json")
+                cur_bak_list=sorted(glob.glob(f"{bak_file}*"),key=os.path.getmtime)
+                cur_bak_list=[x for x in cur_bak_list if x!=f"{bak_file}_上次_new.json"]
+                if len(cur_bak_list)!=0:#只记当天的增量
+                    if (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(cur_bak_list[-1]) )).days ==0:
+                        shutil.copyfile( cur_bak_list[-1] , f"{bak_file}_上次_new.json")
+                for one_file in cur_bak_list: #删除 超过8天的历史数据
+                    if (datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(one_file) )).days >9:
+                        os.remove(one_file)
+                #if datetime.date.today()==one['from'][2:8]:#备份当前数据
+                with open(f"{bak_file}_{datetime.date.today().isoformat()}.json", 'w') as f:
+                    f.write(data.to_json(orient='records',force_ascii=False))
+                #data.to_csv(f"{bak_file}.csv",index=False)
+        p['old_columns']=header
 
-async def _load_html_from_url(data_from=None,config_data=None,user_input_form_data=None,userid=None):
-    '''
-    data_from 某网址下的取数逻辑总汇
-    user_input_form_data 实际传过来的参数
-    返回html
-    '''
-    async with aiohttp.ClientSession() as session:
-    #session = requests.session()
-        url=data_from['url']
-        url=exec_template(None,url,[])
-
-        start_time = time.time()
-        cookies={}
-        if data_from.get('grant_url') is not None and data_from.get('grant_url').strip()!="" :#授权url，获取cookies ，让取数url带过去
-            real_form_data=None if data_from.get('grant_form_input') is None else {x['name']:x['value'] for x in data_from['grant_form_input']}
-            async with session.get(data_from['grant_url']) if (real_form_data is None or len(real_form_data) ==0) else session.post(data_from['grant_url'],data=real_form_data) \
-                 as text_html:
-                cookies=text_html.cookies
-    
-        args=config_data.get('form_input')
-        #设置取数form参数，先用用户传过来的参数覆盖总体的参数，在用总体参数覆盖具体报表的参数
-        if user_input_form_data is None:
-            user_input_form_data={}
-        args={ x['name']: user_input_form_data.get(x['name'],x['value']) for x in config_data.get('form_input') }
-        #real_args=dict() if args is None else \
-        #    {x['name']:(args.get(x['name'],'默认值')  if x['value']=='默认值' else \
-        #                args.get(x['value'][1:-1],'默认值') if x['value'][0]=='{' and x['value'][-1]=='}' else \
-        #                x['value'] )\
-        #        for x in data_from['form_input'] }
-        real_args=dict()
-        for x in data_from['form_input']:
-            if x['value']=='默认值' and args.get(x['name'],'默认值')!='默认值':
-                real_args[x['name']]=args[x['name']]
-            else:
-                if x['value'].startswith("{{") and x['value'].endswith("}}"):
-                    real_args[x['name']]=exec_template(None,x['value'],[])
-                else:
-                    real_args[x['name']]=x['value']
-        
-        #将默认值参数去掉
-        real_form_data=None if real_args is None else {k:v for (k,v) in real_args.items() if v!='默认值'}
-        headers={"needType":"json","worker_no":userid}
-    
-        async with session.get(url,cookies=cookies,headers=headers) if (real_form_data is None or len(real_form_data) ==0) else session.post(url,data=real_form_data,cookies=cookies,headers=headers) \
-            as response:
-            text=await response.text()
-            end_time = time.time()
-            print(f'{url}取数用时： {end_time-start_time}')
-            if text.startswith("\ufeff"):
-                text=text[1:]
-            return text,response,cookies#,text_html.content_type,'text/html'
-class LoadUrlError(RuntimeError):
-    def __init__(self, arg):
-        self.args = [arg]
+        ret[p['name']]={'data':data,'p':p,'header':header,'form_input':data_from['form_input'],"data_from":data_from}            
+    adapter=None
+    return ret
 
 def appendData_and_execLastSql(one_ds,ret,upload_path):
     k=one_ds['name']
@@ -307,23 +244,26 @@ def appendData_and_execLastSql(one_ds,ret,upload_path):
     v['data']=data.round(2)
     v['p']['last_columns']=data.columns.values.tolist()    
 
-import threading
-def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,userid=None):
+
+@func_time
+def load_all_data(config_data,id,appendFunDict=None,upload_path=None,userid=None,args=None):
     print(threading.currentThread().name)
     ret={}
+    start_time = time.time()
     cur_time=time.strftime("%H时%M分")
     #取html和csv中的数据
     tasks=[]
     #loop = asyncio.get_event_loop()
     async def _inner_task(ret):
         for one in config_data['data_from']:
-            if one['url'].startswith('结果://'):
+            if one['type']=='sql' or one['url'].startswith('结果://'):
                 continue        
-            if one['type'] in ['json','html']:
-                tasks.append(load_from_url2(one,config_data,args,upload_path,userid))
-            if one['type']=='file':
+            elif one['type']=='file':
                 filename=os.path.join(upload_path, one['url'])
                 ret={**ret,**load_from_file(filename,one['ds'])}
+                continue
+            #elif one['type'] in ['json','html']:
+            tasks.append(load_from_url2(one,config_data,upload_path,userid,user_input_form_data=args))
         return await asyncio.gather(*tasks,return_exceptions=True),ret
         #status_list = loop.run_until_complete(asyncio.gather(*tasks))
     #https://yanbin.blog/how-flask-work-with-asyncio/#more-10368 关于flask中的异步，这里讲的比较详细
@@ -333,7 +273,7 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
             ret={**ret,**t}  
         if isinstance(t,Exception):
             raise t
- 
+    print(colorama.Fore.RED+  f"全部取数结束，用时： {time.time()-start_time}")
     #用已定义的全局参数，覆盖所有子取数的参数合集
     form_input={}
     for one in config_data['data_from']:
@@ -347,7 +287,7 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
             continue        
         for one_ds in one_data_from['ds']:
             appendData_and_execLastSql(one_ds,ret,upload_path)
-
+    print(f"appendData_and_execLastSql，用时： {time.time()-start_time}")
     #计算单独config_data中的sql语句
     for one_data_from in config_data['data_from']:
         if one_data_from['type']!='sql':
@@ -378,7 +318,7 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
                 'header':sql_data.columns.values.tolist(),
                 'p':one_ds
                 }
-        #ret={**ret,**load_from_exists_df(one['ds'], dict({key:value['data'] for key,value in ret.items()}))}
+       
     #排序
     for k,v in ret.items():
         data=v['data']
@@ -391,27 +331,29 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
                 data[[ sort_name]]=data[[sort_name]].astype(float)
                 data=data.sort_values(by=sort_name,ascending= False).reset_index(drop=True)
         v['data']=data
-
+    print(f"排序后，用时： {time.time()-start_time}")
     ds_dict={k:v['data'] for k,v in ret.items()}
     if(config_data.get("vars") is not None):#先计算所有不是依赖excel结果的变量，这样在excel中就也可以使用变量了
         for one_var in config_data["vars"]:
             if(ds_dict.get(one_var["name"]) is not None):
                 raise SyntaxError(f'变量名字<{one_var["name"]}>已被使用：')
-            if one_var["var_type"]!="detail" or ds_dict.get(one_var["ds"]) is None:
+            # 表示的就是当前变量引用的不是excel结果。
+            if ds_dict.get(one_var["ds"]) is None:
                 continue
             try:
-                val= eval(one_var["last_statement"],ds_dict)
+                exec(one_var["name"]+"="+one_var["last_statement"],ds_dict)
+                val= ds_dict[one_var["name"]]
+                if isinstance(val , float):
+                    val=round(val,2)
+                    if float(val)-int(val)==0:
+                        val=int(val)
+                    ds_dict[one_var["name"]] =val  
             except SyntaxError as e:
                 raise SyntaxError(f'变量<{one_var["name"]}>定义语法错误：'+e.text)
             except Exception as e:
                 raise SyntaxError(f'变量<{one_var["name"]}>定义语法错误：'+str(e))
             
-            if isinstance(val , float):
-                val=round(val,2)
-                if float(val)-int(val)==0:
-                    val=int(val)
-            ds_dict[one_var["name"]]=val
-
+    print(f"变量后，用时： {time.time()-start_time}")
     ret_files=[]
     result=''
     
@@ -419,7 +361,10 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
     if os.path.exists(out_file):
         shutil.rmtree(out_file)
     os.makedirs(out_file)
+    print(f"rm后，用时： {time.time()-start_time}")
     # 为了能直接引用模板结果，先按模板生成结果
+
+
     for one_part in config_data.get('template_output_act',[]):
         if one_part["canOutput"]=="false":
             continue
@@ -440,9 +385,9 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
                     t_ds_dict["_idx_"]=idx            
                     convert_file_for_pptx(out_file,template_file,t_ds_dict)
         elif(one_file[-4:]=='xlsx' ):
-                convert_file_for_xlsx(out_file,template_file,ds_dict,appendFunDict=appendFunDict)
+                convert_file_for_xlsx(out_file,template_file,ds_dict, appendFunDict=appendFunDict)
         ret_files.append({'name':one_file,'errcode':'0','message' :'成功生成','url':f'/mg/file/download_t/{id}/{one_file}'})
-
+    print(f"模板后，用时： {time.time()-start_time}")
     for data_from in config_data['data_from']:
         if not data_from['url'].startswith('结果://'):
             continue
@@ -454,7 +399,7 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
                 data_from['ds']=[{"t": "json","pattern": wb.defined_names.definedName[0].name,"end": '',
                         "start": '',"columns": "auto","view_columns": "","sort": "","name": "修改这里",
                         "old_columns":[]}]
-            for one_ds in one_data_from['ds']:
+            for one_ds in data_from['ds']:
                 has_define=False
                 for my_range in wb.defined_names.definedName:
                     if my_range.name != one_ds['pattern']:
@@ -477,57 +422,53 @@ def load_all_data(config_data,id,appendFunDict=None,args=None,upload_path=None,u
                                                 excel_results[i_row + cell.row - cell_ranges[0][0].row][i_col+cell.column -cell_ranges[0][0].column]=cell.value
                                         continue
                                 excel_results[cell.row - cell_ranges[0][0].row][cell.column -cell_ranges[0][0].column]=cell.value
-                        header,end_line=data_adapter.guess_col_names(excel_results,"auto")
+                        header,end_line=guess_col_names(excel_results,"auto")
                         data=pd.DataFrame(excel_results[end_line:],columns=header)
                         ret[one_ds['name']]={'data':data,'header':header,'p':one_ds}
+                        
                         one_ds['last_columns']=header
                         one_ds['old_columns']=header
                         appendData_and_execLastSql(one_ds,ret,upload_path)
+                        ds_dict[one_ds['name']]=ret[one_ds['name']]['data'] # 添加到变量表中
                         break
                 if has_define==False:
                     raise Exception(data_from['url'] +'，不存在名称：'+one_ds['pattern'])
         finally:
             wb.close()
+            wb=None
     #for index,row in ret['a']['data'].iterrows():
     #    print(row)
-    return ret
+    return ret,ds_dict
 
-def load_from_exists_df(d_p,ds_dict):
-    ret=dict()
-    data=None
-    for p in d_p:
-        if p['t']=='sqlite':
-            exec_sql=exec_template(None,p['pattern'],[])
-            data=pandasql.sqldf(exec_sql,ds_dict)
-        ret[p['name']]={'data':data,'p':p,'header':data.columns.to_list()}
-    return ret
 
 def files_template_exec(id,config_data,userid,app_save_path,appendFunDict=None,wx_queue=None):
     '''
     生成模板文件
     '''
     upload_path=f"{app_save_path}\\{userid}\\{id}"
-    ret_dataset=load_all_data(config_data,id,appendFunDict,upload_path=upload_path,userid=userid)
-    ds_dict={k:v['data'] for k,v in ret_dataset.items()}
+    ret_dataset,ds_dict=load_all_data(config_data,id,appendFunDict,upload_path=upload_path,userid=userid)
+    #ds_dict={k:v['data'] for k,v in ret_dataset.items()}
     
     if(config_data.get("vars") is not None):
-        for one_var in config_data["vars"]:#计算依赖excel结果的变量，已经计算的在ds_dict中已经存在了
+        for one_var in config_data["vars"]:
+            # 只计算没有计算过的变量
             if(ds_dict.get(one_var["name"]) is not None):
                 continue
-            if one_var["var_type"]!="detail" :
-                continue
             try:
-                val= eval(one_var["last_statement"],ds_dict)
+                exec(one_var["name"] +"="+one_var["last_statement"],ds_dict)
+                val= ds_dict[one_var["name"]]
+                if isinstance(val , float):
+                    val=round(val,2)
+                    if float(val)-int(val)==0:
+                        val=int(val)
+                    ds_dict[one_var["name"]]=val
+                
             except SyntaxError as e:
                 raise SyntaxError(f'变量<{one_var["name"]}>定义语法错误：'+e.text)
             except Exception as e:
                 raise SyntaxError(f'变量<{one_var["name"]}>定义语法错误：'+str(e))
             
-            if isinstance(val , float):
-                val=round(val,2)
-                if float(val)-int(val)==0:
-                    val=int(val)
-            ds_dict[one_var["name"]]=val
+
 
     ret_files=[]
     result=''
@@ -599,36 +540,6 @@ def files_template_exec(id,config_data,userid,app_save_path,appendFunDict=None,w
                 loop_one_txt(one_part,t_ds_dict,idx)
     return ret_files,tpl_results
 
-def _main() :  
-    sys.path.append(os.path.realpath(os.curdir))
-    ret=load_from_url2("http://report.hn.clic/report3/default.aspx?reportName=2019/3jidu/gx_2019_3jidu_new.cr",
-                [{'t':'html','name':'a','pattern':'#reportDivmainthetable tr','start':4,'end':'+18','sort':4,'columns':"auto",'view_columns':'0,1,2,3,4'},
-                {'t':'html','name':'b','pattern':'#reportDivmainthetable tr','start':3,'end':'+1','sort':None,'columns':"auto",'view_columns':None}
-                ]
-            )
-    ret2=load_from_url2("http://report.hn.clic/report3/default.aspx?reportName=2019/2jidu/gx_bole.cr",
-            [{'t':'json','name':'b','pattern':'#reportDivaaa1thetable tr','start':'reportDivaaa1_data={"rows":','end':"/*-end-*/",'sort':None,'columns':"auto",'view_columns':None}]
-        )
-
-    t1=ret['a']['data']
-    t2=ret2['b']['data']
-
-    t_left=t1[4:]
-    t_right=t1[:-4]
-    print(pd.merge(left=t_left,right=t_right,left_on='机构代码',right_on='机构代码',how='outer'))
-
-    #pysqldf = lambda q: pandasql.sqldf(q)
-    print(pandasql.sqldf("select * from t_left t1 left join t_right t2 on t1.机构代码=t2.机构代码"))
-
-    def Merge(dict1, dict2): 
-        res = {**dict1, **dict2} 
-        return res     
-    ds_dict={}
-    ds_dict=Merge(ds_dict,ret)
-    template_file= "out.xlsx"
-    out_filename='bb.xlsx'
-    convert_file_for_xlsx(out_filename,template_file,ds_dict)
-    print("done!!!")
 if __name__ == '__main__':
     import glb
     import objgraph  

@@ -223,6 +223,7 @@ def start_scheduler():
                             except Exception as e:
                                 print(e)
                         else:
+                            msg_queue.put({'type':'sendMessage',"wxid":'qywx:'+row['worker_no'],"content":f"{row['report_name']},定时设置不正确。分段长度必须大于5"})
                             print(f"{row['id']}的cron 不正确")
                     row = cursor.fetchone()
         scheduler.add_job(msg_queue.sendMessage,'interval', max_instances=10,seconds=1)

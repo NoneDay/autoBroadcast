@@ -330,6 +330,7 @@ export default {
       //this.data.config_data=res_data.config_data
       res_data.config_data.data_from.forEach( (df,df_index)=>{
         this.data.config_data.data_from[df_index].form_input=df.form_input
+        this.data.config_data.data_from[df_index].type=df.type
         df.ds.forEach((ds,ds_index)=>{ 
           if(this.data.config_data.data_from[df_index].ds[ds_index])
             Object.assign(this.data.config_data.data_from[df_index].ds[ds_index],ds)

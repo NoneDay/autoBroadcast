@@ -195,6 +195,7 @@ export default {
     'obj.ds'(){
       this.field_dicData=[]
       if(this.obj.ds){
+        this.field_dicData.push({label: '__序号__',value: '__序号__'})
         this.all_ds.filter(x=>x.name==this.obj.ds)[0].last_columns.forEach(x=>{
           this.field_dicData.push({label: x,value: x})
         })
@@ -218,18 +219,22 @@ export default {
       {        
         if(this.obj.where && this.obj.where.length>0){
             let where_arr =[]
-            this.obj.where.forEach(x=>
-              where_arr.push( "`"+x.field +"`"+ x.op + x.value )
+            this.obj.where.forEach(x=>{
+              if (x.field=='__序号__')
+                where_arr.push( "(index+1)"+ x.op + x.value.replaceAll(/[‘|’|“|”]/g,'\'') )
+              else
+                where_arr.push( "`"+x.field +"`"+ x.op + x.value.replaceAll(/[‘|’|“|”]/g,'\'') )
+            }
             )
             ret_s=ret_s+'.query("""'+ where_arr.join(" & ")  + '""")'
         }
-        if(this.obj.group && this.obj.group.length>0){
+        if(this.obj.group && this.obj.group.filter(x=>x!="__序号__").length>0){
           console.info(this.obj.group)
-          ret_s=ret_s+'.groupby(["'+this.obj.group.join('","')+'"]).sum().reset_index()'
+          ret_s=ret_s+'.groupby(["'+this.obj.group.filter(x=>x!="__序号__").join('","')+'"]).sum().reset_index()'
         }
-        if(this.obj.sort_field)
+        if(this.obj.sort_field  && this.obj.sort_field!="__序号__")
         {
-          ret_s=ret_s+'.sort_values("' +this.obj.sort_field+'",ascending='+this.obj.sort+')'
+          ret_s=ret_s+'.sort_values("' +this.obj.sort_field+'",ascending='+this.obj.sort+').reset_index()'
         }
         if(this.obj.topType==='top' && this.obj.top )
            ret_s=ret_s+`[:${this.obj.top||''}]`
@@ -239,20 +244,25 @@ export default {
           ret_s=ret_s+`[${this.obj.start||''}:${this.obj.end||''}]`
         
         let cur_df=ret_s
-        let arr=[]
         if(this.obj.resultType==='detail'){
+          let arr=[]
+          ret_s="__tmp_ds__="+ret_s+"\n"
           if(this.obj.select && this.obj.select.length>0){
-            this.obj.select.forEach(x=>
-                  arr.push('"'+ ( (x.before||'') + `" + ${cur_df}["` +x.field + '"].astype(str) +"'+ (x.after||'') +'"'))
+            this.obj.select.forEach(x=>{
+                  if (x.field=='__序号__')
+                    arr.push('"'+ ( (x.before||'') + `" + (__tmp_ds__.index+1)` + '.astype(str) +"'+ (x.after||'') +'"'))
+                  else
+                    arr.push('"'+ ( (x.before||'') + `" + __tmp_ds__["` +x.field + '"].astype(str) +"'+ (x.after||'') +'"'))
+                }
                 )
             if (this.obj.line_join===undefined)
               this.obj.line_join="\\n"
-            ret_s= "('"+ this.obj.line_join.replace("'","\\'") +"'.join([str(x) for x in (  "+  arr.join("+")  + "   ).values]))"
+            ret_s=ret_s+ this.obj.name+"= ('"+ this.obj.line_join.replace("'","\\'") +"'.join([str(x) for x in (  "+  arr.join("+")  + "   ).values]))"
             return ret_s
           }
         }
         else if(this.obj.resultType==='sum'){
-          if(this.obj.sum_field!="")
+          if(this.obj.sum_field!=""&& this.obj.sum_field!="__序号__")
             ret_s=ret_s+'.sum()["' +this.obj.sum_field+'"]'
           else
             ret_s=ret_s+'.sum().reset_index()'

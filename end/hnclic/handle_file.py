@@ -15,7 +15,7 @@ from openpyxl.formula.translate import Translator
 from openpyxl  import load_workbook
 import asyncio
 import aiohttp
-from utils import unzip_single,zipDir,get_jinja2_Environment,is_number
+from utils import unzip_single,zipDir,get_jinja2_Environment,is_number,exec_template,guess_col_names
 locale.setlocale(locale.LC_CTYPE, 'chinese')
 
 def convert_file_for_txt(out_filename,template_file,ds_dict):
@@ -54,29 +54,7 @@ def _get_remark_define(notes_text,ds_dict):
                 else:
                     ds_iter=pd.eval(one[pos+1:].strip(),local_dict=ds_dict)[:Need_lines].reset_index(drop=True)
     return ds_iter,title_lines,Need_lines,loop_var
-def exec_template(env,template_string,real_dict):
-    if template_string.find("{{") <0:
-        return template_string
-    if env is None:
-        env = get_jinja2_Environment()
-    template_string=template_string.replace("“","\"").replace("”","\"").replace("‘","'").replace("’","'").replace("，",",")
 
-    template = env.from_string(template_string)
-    result=template.render(real_dict)
-    result_lines=result.split("\n")
-    if(len(result_lines)==1):
-        return result    
-    for one_line in result_lines:#展开模板计算结果
-        one_line_split=one_line.split()
-        if len(one_line_split)==2 and is_number(one_line_split[0]) and result_lines[-1].startswith("Name:") and result_lines[-1].find("dtype:")>1:
-            real_value=[] #is_pd_serials
-            for one_line in result_lines[:-1]:#展开模板计算结果  
-                real_value.append(one_line.split()[1])
-            return "\n".join(real_value)
-        elif len(one_line_split)>2 and len(result_lines[1].split())>len(result_lines[0].split()) : #is_pd_frame  {{ds}} 第一行没有idx 列，要加上 
-            return "序号\t"+result
-        break
-    return result
 
 def convert_file_for_pptx(out_filename,template_file,ds_dict):
     '''按模板转换xlsx文件
@@ -212,48 +190,62 @@ def convert_file_for_pptx(out_filename,template_file,ds_dict):
                     current_row=current_row+1
                     if current_row>=len(shape.table.rows):
                         break    
-    
-    real_dict=ds_dict.copy()
-    for slide in ppt_file.slides:
-        if slide.has_notes_slide:#抽取备注栏里面的变量定义，后页会覆盖前页
-            notes_text=slide.notes_slide.notes_text_frame.text
-            for one_line in notes_text.split("\n"):
-                var_expr=one_line.split("=")
-                if len(var_expr)<2:
-                    continue
-                try:
-                    if var_expr[1].strip().startswith("{{"):
-                        result_lines = exec_template(env,var_expr[1],real_dict)
-                    else:
-                        result_lines = exec_template(env,"{{" + var_expr[1]+ "}}",real_dict)
-                    real_dict=real_dict.copy()
-                    real_dict[var_expr[0].strip() ] = result_lines
-                except Exception as e:
-                    raise RuntimeError("\n备注说明中的公式不正确："+one_line)       
+    try:
+        real_dict=ds_dict.copy()
+        for slide in ppt_file.slides:
+            if slide.has_notes_slide:#抽取备注栏里面的变量定义，后页会覆盖前页
+                notes_text=slide.notes_slide.notes_text_frame.text
+                for one_line in notes_text.split("\n"):
+                    var_expr=one_line.split("=")
+                    if len(var_expr)<2:
+                        continue
+                    try:
+                        if var_expr[1].strip().startswith("{{"):
+                            result_lines = exec_template(env,var_expr[1],real_dict)
+                        else:
+                            result_lines = exec_template(env,"{{" + var_expr[1]+ "}}",real_dict)
+                        real_dict=real_dict.copy()
+                        real_dict[var_expr[0].strip() ] = result_lines
+                    except Exception as e:
+                        raise RuntimeError("\n备注说明中的公式不正确："+one_line)       
 
-        handle_all_shapes(slide.shapes,real_dict,tmp_pd_dict) 
-    ppt_file.save(out_filename)
-    ppt2png(out_filename,ds_dict.get("_idx_",''))
+            handle_all_shapes(slide.shapes,real_dict,tmp_pd_dict) 
+    
+        ppt_file.save(out_filename)
+    finally:
+        if ppt_file is not None:
+            ppt_file.save(out_filename)
+            del ppt_file
+        ppt2png(out_filename,ds_dict.get("_idx_",''))
 
 def ppt2png(pptFileName,idx=0):
     comtypes.CoInitialize()
-    powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
-    powerpoint.Visible = True
-    outputFileName = pptFileName[0:-5] + ".pdf"
-    ppt = powerpoint.Presentations.Open(pptFileName)
-    #保存为图片
-    ppt.SaveAs(pptFileName[0:-5] + f'_{idx}.jpg', 17)
-    #保存为pdf
-    #ppt.SaveAs(outputFileName, 32) # formatType = 32 for ppt to pdf
-    # 关闭打开的ppt文件
+    try:
+        powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
+        powerpoint.Visible = True
+        outputFileName = pptFileName[0:-5] + ".pdf"
+        ppt = powerpoint.Presentations.Open(pptFileName)
+        try:
+            #保存为图片
+            ppt.SaveAs(pptFileName[0:-5] + f'_{idx}.jpg', 17)
+            #保存为pdf
+            #ppt.SaveAs(outputFileName, 32) # formatType = 32 for ppt to pdf
+            # 关闭打开的ppt文件
+        finally:
+            # 关闭打开的ppt文件
+            if ppt is not None:
+                ppt.Close()
+                ppt=None
+            # 关闭powerpoint软件
+            if powerpoint is not None:
+                powerpoint.Quit()
+                powerpoint=None
+    finally:
+        comtypes.CoUninitialize()
 
-    ppt.Close()
-    # 关闭powerpoint软件
-    powerpoint.Quit()
 
 
-
-def convert_file_for_xlsx(out_filename,template_file,ds_dict,appendFunDict=None):
+def convert_file_for_xlsx(out_filename,template_file,ds_dict, appendFunDict=None):
     '''按模板转换xlsx文件
     按字典转换模板文件，输出为out_filename
     '''
@@ -323,12 +315,12 @@ def convert_file_for_xlsx(out_filename,template_file,ds_dict,appendFunDict=None)
             if sheet.title.startswith("_") or (list_g is not None and list_g.count(sheet.title)>0):
                 excel2img.export_img(out_filename, f"{out_filename}{ '{:0>2d}'.format(cnt) }{sheet.title}.png", sheet.title)
             cnt=cnt+1
+
     finally:
         if wb!=None:
             wb.close()
             del wb
             #excel_catch_screen(out_filename,sheet.title,sheet.dimensions,f"{out_filename}{sheet.title}.png")
-
 
 def json_keyvalue_all(input_json,rootStack=[],ds_dict={}):
     try:
