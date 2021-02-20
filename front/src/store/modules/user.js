@@ -50,6 +50,7 @@ const user = {
     userInfo: {},
     permission: {},
     roles: [],
+    canReadSys:[],
     menuId: getStore({ name: 'menuId' }) || {},
     menu: getStore({ name: 'menu' }) || [],
     menuAll: getStore({ name: 'menuAll' }) || [],
@@ -92,9 +93,10 @@ const user = {
       return new Promise((resolve, reject) => {
         getUserInfo().then((res) => {
           const data = res.data;
-          commit('SET_USERIFNO', data.userInfo);
+          commit('SET_USERINFO', data.userInfo);
           commit('SET_ROLES', data.roles);
           commit('SET_PERMISSION', data.permission)
+          commit('SET_CANREADSYS', data.canReadSys)
           resolve(data);
         }).catch(err => {
           reject(err);
@@ -122,6 +124,7 @@ const user = {
           commit('SET_MENUALL', []);
           commit('SET_MENU', [])
           commit('SET_ROLES', [])
+          commit('SET_CANREADSYS', [])
           commit('DEL_ALL_TAG');
           commit('CLEAR_LOCK');
           removeToken()
@@ -179,7 +182,7 @@ const user = {
       state.menuId = menuId;
       setStore({ name: 'menuId', content: state.menuId, type: 'session' })
     },
-    SET_USERIFNO: (state, userInfo) => {
+    SET_USERINFO: (state, userInfo) => {
       state.userInfo = userInfo;
     },
     SET_MENUALL: (state, menuAll) => {
@@ -201,6 +204,9 @@ const user = {
     },
     SET_ROLES: (state, roles) => {
       state.roles = roles;
+    },
+    SET_CANREADSYS: (state, canReadSys) => {
+      state.canReadSys = canReadSys;
     },
     SET_PERMISSION: (state, permission) => {
       state.permission = {};

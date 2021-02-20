@@ -69,7 +69,6 @@ class ExcelFile(object):
             self.app = None
         CoUninitialize()
 
-
 def export_img(fn_excel, fn_image, page=None, _range=None):
     """ Exports images from excel file """
 
@@ -127,6 +126,54 @@ def export_img(fn_excel, fn_image, page=None, _range=None):
                 retries -= 1
                 #print "CopyPicture failed, retries left:", retries
                 if retries == 0: raise
+
+def export_img_many(fn_excel, page_images):
+    """ Exports images from excel file """    
+    with ExcelFile.open(fn_excel) as excel:
+        for fn_image, page in page_images:
+            output_ext = os.path.splitext(fn_image)[1].upper()
+            if output_ext not in ('.GIF', '.BMP', '.PNG'):
+                raise ValueError('Unsupported image format: %s'%output_ext)
+
+            if page is None: page = 1
+            try:
+                rng = excel.workbook.Sheets(page).UsedRange
+            except com_error:
+                raise Exception("Failed locating used cell range on page %s"%page)
+            except AttributeError:
+                # This might be a "chart page", try exporting it as a whole
+                rng = excel.workbook.Sheets(page).Export(os.path.abspath(fn_image))
+                return
+            if str(rng) == "None":
+                # No used cells on a page. maybe there's a single object.. try simply exporting as png
+                shapes = excel.workbook.Sheets(page).Shapes
+                if len(shapes) == 1:
+                    rng = shapes[0]
+                else:
+                    raise Exception("Failed locating used cells or single object to print on page %s"%page)
+
+            # excel.workbook.Activate() # Trying to solve intermittent CopyPicture failure (didn't work, only becomes worse)
+            # rng.Parent.Activate()     # http://answers.microsoft.com/en-us/msoffice/forum/msoffice_excel-msoffice_custom/
+            # rng.Select()              # cannot-use-the-rangecopypicture-method-to-copy-the/8bb3ef11-51c0-4fb1-9a8b-0d062bde582b?auth=1
+            
+            # See http://stackoverflow.com/a/42465354/1924207
+            for shape in rng.parent.Shapes: pass
+
+            xlScreen, xlPrinter = 1, 2
+            xlPicture, xlBitmap = -4147, 2
+            retries, success = 100, False
+            while not success:
+                try:
+                    rng.CopyPicture(xlScreen, xlBitmap)
+                    im = ImageGrab.grabclipboard()
+                    im.save(fn_image, fn_image[-3:])
+                    success = True
+                except (com_error, AttributeError) as e:
+                    # http://stackoverflow.com/questions/24740062/copypicture-method-of-range-class-failed-sometimes
+                    # When other (big) Excel documents are open CopyPicture fails intermittently
+                    retries -= 1
+                    #print "CopyPicture failed, retries left:", retries
+                    if retries == 0: raise
 
 
 if __name__ == '__main__':

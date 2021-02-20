@@ -19,6 +19,7 @@ const getters = {
   token: state => state.user.token,
   roles: state => state.user.roles,
   permission: state => state.user.permission,
+  canReadSys: state => state.user.canReadSys,
   menuId: state => state.user.menuId,
   menu: state => state.user.menu,
   menuAll: state => state.user.menuAll,

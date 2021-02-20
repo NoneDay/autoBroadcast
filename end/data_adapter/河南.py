@@ -74,7 +74,7 @@ class MyDataInterface(DataInterface):
         #使用原先定义的参数设置覆盖缺省的
         form_inputs= {**form_inputs,**{x["name"]:x["value"] for x in data_from['form_input']}}
         data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
-        return self.soup
+        return self.soup,{},None
 
     async def _load_html(self,url,input_params):
         '''
@@ -85,18 +85,12 @@ class MyDataInterface(DataInterface):
         data_from=self.data_from
         if data_from.get('grant_url') is not None and data_from.get('grant_url').strip()!="" :#授权url，获取cookies ，让取数url带过去
             real_form_data=None if data_from.get('grant_form_input') is None else {x['name']:x['value'] for x in data_from['grant_form_input']}
-            async with self.session.get(data_from['grant_url']) if (real_form_data is None or len(real_form_data) ==0) else \
-                        self.session.post(data_from['grant_url'],data=real_form_data) as text_html:
-                cookies=text_html.cookies
-
-        cookies={**self.next_cookies,**cookies}
-        async with self.session.get(url,cookies=cookies,headers=self.next_headers) if (input_params is None or len(input_params) ==0) \
-                else self.session.post(url,data=input_params,cookies=cookies,headers=self.next_headers) as response:
-            text=await response.text()
-            print(f'{url}取数用时： {time.time()-start_time}')
-            if text.startswith("\ufeff"):
-                text=text[1:]
-            return text,response.content_type,response.status #,text_html.content_type,'text/html'
+            text,content_type,status,cookies=await super().post(data_from['grant_url'],data=real_form_data)
+            
+        text,content_type,status,_=await super().post(url,data=input_params,cookies=cookies)
+        if text.startswith("\ufeff"):
+            text=text[1:]
+        return text,content_type,status
 
     def load_data_for_p(self,p):
         if self.is_cr_json:#这是我的新报表的数据格式分析

@@ -311,11 +311,12 @@ def convert_file_for_xlsx(out_filename,template_file,ds_dict, appendFunDict=None
                 calc_cell(sheet)
         wb.save(out_filename)
         cnt=0
+        page_images=[]
         for sheet in wb.worksheets: 
             if sheet.title.startswith("_") or (list_g is not None and list_g.count(sheet.title)>0):
-                excel2img.export_img(out_filename, f"{out_filename}{ '{:0>2d}'.format(cnt) }{sheet.title}.png", sheet.title)
+                page_images.append((f"{out_filename}{ '{:0>2d}'.format(cnt) }{sheet.title}.png", sheet.title))
             cnt=cnt+1
-
+        excel2img.export_img_many(out_filename,page_images)
     finally:
         if wb!=None:
             wb.close()

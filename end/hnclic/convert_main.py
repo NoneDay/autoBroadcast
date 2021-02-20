@@ -96,15 +96,20 @@ async def load_from_url2(data_from=None,config_data=None,upload_path=None,userid
     for p in data_from['ds']:
         resultModel,header,data,json_props=adapter.load_data_for_p(p)
         if resultModel=="TableModel":
-            data=pd.DataFrame(data,columns=header)
+            #删除NULL列
+            data=pd.DataFrame(data,columns=header).replace('',NaN).dropna(axis = 1, how = "all")
+            header=list(data.columns)
         elif resultModel=="JsonModel":
             data=pd.DataFrame(data)[json_props] #按json_props中指定的顺序重排
             data.columns=header#按header重设列名
+            #删除NULL列
+            data=data.replace('',NaN).dropna(axis = 1, how = "all")
+            header=list(data.columns)
             if 'id' in json_props:
                 data=data.drop(['id'], axis=1)
         else:
             raise RuntimeError("适配接口只能返回TableModel或者JsonModel。请联系管理员修改程序")
-
+        data=data
         #缺省列名为：s+数字
         if isinstance(p['view_columns'],str):
             data.columns=header if p['columns']=='' or p['columns'].startswith("auto") else [('s'+str(x) if is_number(x) else x) for x in range(len(data.loc[0]))]
@@ -438,6 +443,8 @@ def load_all_data(config_data,id,appendFunDict=None,upload_path=None,userid=None
             wb=None
     #for index,row in ret['a']['data'].iterrows():
     #    print(row)
+    for x in ret:
+        del ds_dict[x]
     return ret,ds_dict
 
 
@@ -447,7 +454,7 @@ def files_template_exec(id,config_data,userid,app_save_path,appendFunDict=None,w
     '''
     upload_path=f"{app_save_path}\\{userid}\\{id}"
     ret_dataset,ds_dict=load_all_data(config_data,id,appendFunDict,upload_path=upload_path,userid=userid)
-    #ds_dict={k:v['data'] for k,v in ret_dataset.items()}
+    ds_dict={**{k:v['data'] for k,v in ret_dataset.items()},**ds_dict}
     
     if(config_data.get("vars") is not None):
         for one_var in config_data["vars"]:

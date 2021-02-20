@@ -4,6 +4,8 @@
     <div class="app-main-left-projects" v-if="menuId.meta && menuId.meta.edit && menuId.meta.edit==true">
       <el-button @click="handleCommand('createCatalog',null,{})"
         class="create-project-btn"  type="primary" size="mini" >新建目录</el-button>
+        <el-button @click="$router.push('/sysandlogin/index/')"
+        class="create-project-btn"  type="primary" size="mini" >系统设置</el-button>
       <el-scrollbar style="height:100%">
         <el-tree :data="menu" 
             :props="defaultProps" node-key="id"

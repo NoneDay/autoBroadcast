@@ -1,4 +1,4 @@
-import os,json,requests,sys
+import os,json,requests,sys,re
 sys.path.append(os.path.realpath(os.curdir))
 from datetime import datetime
 from flask import request
@@ -29,6 +29,9 @@ else:
 
 __pool = ConnectionPool(host=ini['redis']['host'], port=ini['redis']['port'], db=ini['redis']['db'], password=ini['redis']['password'])
 redis = StrictRedis(connection_pool=__pool)
+__pool3 = ConnectionPool(host=ini['redis']['host'], port=ini['redis']['port'], db=3, password=ini['redis']['password'])
+redis3 = StrictRedis(connection_pool=__pool3)
+
 _qywx=qywx.Qywx(corpid=ini['qywx']['corpid'],corpsecret=ini['qywx']['corpsecret'],is_log=False,log_path=ini['qywx']['log_path'],redis=redis)
 
 
@@ -241,3 +244,37 @@ def update_scheduler(id,cron_str,cron_start,config_data,userid,report_name):
                         hour=cron_arr[2],minute=cron_arr[1],second=cron_arr[0]
                     )
 ###################################
+login_getData_template_dict=dict()
+
+with db_connect() as conn:
+    with conn.cursor(as_dict=True) as cursor:
+        cursor.execute('SELECT * FROM sys_register')
+        allSysRegister=cursor.fetchall()
+for idx,one in enumerate(allSysRegister):
+    redis.hset("zb:sys_register",one['name'],one['json_txt'])
+    login_getData_template_dict[one['name']]={**one,**json.loads(one['json_txt'])}
+
+def getSysRegister(name):
+    #result=login_getData_template_dict.get(name)
+    #if result is not None:
+    #    return result
+    result=redis.hget("zb:sys_register",name)
+    if result is None:
+        with db_connect() as conn:
+            with conn.cursor(as_dict=True) as cursor:
+                cursor.execute('SELECT * FROM sys_register where name=%s',name)
+                result=cursor.fetchone()
+                if result is None:
+                    return None
+                redis.hset("zb:sys_register",result['name'],result['json_txt'])
+                result=result['json_txt']
+    return json.loads(result)
+
+def getSysByUser(userid):
+    ret=[]
+    for k,v in login_getData_template_dict.items():
+        if re.search(v['allow_userid'],userid):
+            ret.append(v)
+    return ret
+
+

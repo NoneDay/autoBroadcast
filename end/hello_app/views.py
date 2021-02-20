@@ -3,9 +3,10 @@ import requests,os,sys, traceback
 from flask import Flask, render_template, request,session,flash,make_response,redirect,send_from_directory,session,Blueprint,url_for,jsonify
 from hello_app import app
 from hnclic import convert_main as ce,glb
-import json
+import json,asyncio
 from werkzeug.utils import secure_filename
 import pymssql
+from data_adapter.DataInterface import DataInterface
 
 mg = Blueprint('mg', __name__, template_folder='templates')
 
@@ -188,6 +189,86 @@ def remove_file(id,filename):
         return {'errcode': 0, 'message': '删除成功'}
     else:
         return {'errcode': 1, 'message': '非法删除'}
+
+@mg.route("/getLoginGetDataTemplate", methods=['GET'])
+def getLoginGetDataTemplate():
+    all_sys=None
+    with glb.db_connect() as conn:
+        with conn.cursor(as_dict=True) as cursor:
+            if glb.ini['user_login']['test_user']==session['userid']:
+                cursor.execute('SELECT * FROM sys_register')
+                all_sys=cursor.fetchall()
+            cursor.execute('SELECT * FROM login_tbl WHERE worker_no=%s', session['userid'])
+            login_tbl=cursor.fetchall()
+    return {'errcode':0,
+        'sys_register':all_sys if all_sys is not None else [],
+        'parsers':list([x[:-3] for x in os.listdir("./data_adapter/") if x[-3:]=='.py' and x!='__init__.py' and x!='DataInterface.py' ] ),
+        'login_tbl':login_tbl}
+
+@mg.route("/login_tbl/", methods=['POST'])
+def login_tbl():
+    data=request.json
+    data['userid']=session['userid']
+    di=DataInterface(None,session['userid'],glb.getSysRegister(data['sys_name']),data)
+    asyncio.run(di.login_check()) 
+    with glb.db_connect() as conn:
+        with conn.cursor(as_dict=True) as cursor:
+            cursor.execute(""" MERGE INTO [login_tbl] t 
+                USING (VALUES (%(sys_name)s,%(username)s,%(password)s,%(userid)s)) 
+                    AS s(sys_name,username,password,worker_no) 
+                    ON (t.[sys_name]=s.[sys_name] and t.worker_no=s.worker_no)
+                    WHEN MATCHED THEN  UPDATE SET [username]=%(username)s,[password]=%(password)s 
+                    WHEN NOT MATCHED THEN    INSERT (sys_name,username,password,worker_no)           
+                    VALUES(%(sys_name)s,%(username)s,%(password)s,%(userid)s);""",
+                data)
+            conn.commit()
+    return jsonify(errcode=0,)
+    
+@mg.route("/sys_register/<action>", methods=['POST'])
+def sys_register(action):
+    if glb.ini['user_login']['test_user']!=session['userid']:
+        return {'errcode': 1, 'message': '你没有权限修改配置'}
+    data=json.loads(json.dumps(request.json))
+    data['worker_no']=session['userid']
+    data['json_txt']=json.dumps(request.json,ensure_ascii=False)
+    with glb.db_connect() as conn:
+        with conn.cursor(as_dict=True) as cursor:
+            if action=="delete":
+                cursor.execute("delete from sys_register where id=%d",data['id'])
+                conn.commit()
+                glb.redis.hdel("zb:sys_register",data['name'])
+                del glb.login_getData_template_dict[data['name']]
+                return jsonify(errcode=0,)
+            if data.get('id') is None or data['id']==0:
+                cursor.execute("""INSERT INTO [dbo].[sys_register]([name],worker_no,[type],json_txt)
+                    VALUES (%(name)s,%(worker_no)s,%(type)s,%(json_txt)s)""", {
+                        'name':data['name'],
+                        'worker_no':data['worker_no'],
+                        'type':data['type'],
+                        'json_txt':data['json_txt']
+                    })
+                conn.commit()
+                data['id']=cursor.lastrowid
+                glb.redis.hset("zb:sys_register",data['name'],data['json_txt'])
+                glb.login_getData_template_dict[data['name']]=json.loads(data['json_txt'])
+                return jsonify(errcode=0,id=cursor.lastrowid)
+            else:
+                cursor.execute(""" update [sys_register] set
+                    name=%(name)s,worker_no=%(worker_no)s
+                    ,type=%(type)s
+                    ,json_txt=%(json_txt)s where id=%(id)d
+                    """,{
+                        'name':data['name'],
+                        'worker_no':data['worker_no'],
+                        'type':data['type'],
+                        'json_txt':data['json_txt'],
+                        'id':data['id']
+                    } )
+                conn.commit()
+                glb.redis.hset("zb:sys_register",data['name'],data['json_txt'])
+                glb.login_getData_template_dict[data['name']]=json.loads(data['json_txt'])
+                return jsonify(errcode=0,)
+
 #########################
 #f"{glb.config['UPLOAD_FOLDER']}/{session['userid']}/tmp"
 # 

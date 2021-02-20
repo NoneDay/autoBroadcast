@@ -46,6 +46,18 @@ export default [{
       import( /* webpackChunkName: "views" */ '@/views/rpt_design/list')
   }]
 },{
+  path: '/sysandlogin',
+  component: Layout,
+  children: [{
+    path: 'index',
+    name: '系统和模拟登陆设置', 
+    meta: {
+      keepAlive: true,
+    },
+    component: () =>
+      import( /* webpackChunkName: "views" */ '@/views/zhanbao/sys_and_login')
+  }]
+},{
   path: '/rpt-design',
   component: Layout,
   children: [{

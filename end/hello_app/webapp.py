@@ -37,7 +37,6 @@ app.register_blueprint(tianbao.tb, url_prefix='/tb')
 #requests.post("http://127.0.0.1:10001/sendMessage",data='{"wxid":"flydao3000","content":"wx开始了"}'.encode('utf-8'))
 
 if __name__ == '__main__':    
-
     glb.start_scheduler()
     #wx_receive_message()
     app.static_url_path="/static"

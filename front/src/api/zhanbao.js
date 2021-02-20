@@ -135,3 +135,36 @@ export function file_preview_t(id, file_name) {
     }
   })
 }
+
+export function getLoginGetDataTemplate() {
+  return request({
+    url: `/mg/getLoginGetDataTemplate`,
+    method: 'get',
+    loading: {
+      type: 'loading',
+      options: {
+        fullscreen: true,
+        lock: true,
+        text: '正在下载...',
+        spinner: 'el-icon-loading',
+        background: 'rgba(0, 0, 0, 0.8)'
+      }
+    }
+  })
+}
+
+export function login_tbl(data) {
+  return request({
+    url: `/mg/login_tbl/`,
+    method: 'post',
+    data
+  })
+}
+
+export function sys_register(data,action) {
+  return request({
+    url: `/mg/sys_register/${action}`,
+    method: 'post',
+    data
+  })
+}

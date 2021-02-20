@@ -38,6 +38,9 @@ def user_info():
                 'sys_role_btn1',
                 'sys_role_btn2',
             ]
+    if glb.ini['user_login']['test_user']==session['userid']:
+        r_json['permission'].append('sys_register')
+    r_json['canReadSys']=glb.getSysByUser(session['userid'])
     return json.dumps({"code":0,"data":r_json})
 
 @app.route("/user/getTopMenu")
