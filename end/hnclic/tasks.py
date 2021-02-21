@@ -5,10 +5,11 @@ from hnclic.taskMain import zbTaskApp
 import excel2img
 import comtypes.client
 from hnclic import convert_main as ce,glb
+import pandas as pd
 
 @zbTaskApp.task
 def files_template_exec(rptid,config_data,userid,upload_path):
-    ce.files_template_exec(rptid,config_data,userid,upload_path,wx_queue=glb.msg_queue)   
+    return ce.files_template_exec(rptid,config_data,userid,upload_path,wx_queue=glb.msg_queue)   
 
 @zbTaskApp.task
 def zb_execute(rptid,config_data=None,userid=None,report_name=""):
@@ -30,7 +31,16 @@ def send_message():
 
 @zbTaskApp.task
 def load_all_data(config_data,id,args=None,upload_path=None,userid=None):
-    return ce.load_all_data(config_data,id=id,args=args,upload_path=upload_path,userid=userid)
+    ds_dict=ce.load_all_data(config_data,id=id,args=args,upload_path=upload_path,userid=userid)
+    df_arr=[]
+    ret={}
+    for k,v in ds_dict.items():
+        if isinstance(v,pd.DataFrame):
+            ret[k]=v.to_json(orient='records',force_ascii=False)#
+            df_arr.append(k)
+        elif k[:2]!='__':
+            ret[k]=v
+    return df_arr,ret
 
 @zbTaskApp.task
 def cut_image_xlsx(fn_excel, fn_image, page=None, _range=None):

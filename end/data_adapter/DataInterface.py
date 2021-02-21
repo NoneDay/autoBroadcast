@@ -30,7 +30,7 @@ class DataInterface():
                 form_data=json.loads(form_data)
                 login_headers={**self.login_getData_template['headers'],**login_headers}
 
-                cache_key=self.data_from['type']+":"+self.user_password['username']
+                cache_key=self.login_getData_template['type']+":"+self.user_password['username']
                 identifier=await acquire_lock_with_timeout(glb.redis3,"lock:"+cache_key)
                 if identifier:
                     try:
@@ -51,7 +51,7 @@ class DataInterface():
                     finally:
                         release_lock(glb.redis3,"lock:"+cache_key,identifier)
                 else:
-                    raise RuntimeError(f"登陆等待获取redis 锁超时<{self.data_from['url']}>")
+                    raise RuntimeError(f"登陆等待获取redis 锁超时<{self.login_getData_template['url']}>")
 
                 success_flag=self.login_getData_template['login_success']
                 error_flag=self.login_getData_template['login_error']
@@ -75,7 +75,7 @@ class DataInterface():
 
     async def login_check(self):
         async with aiohttp.ClientSession() as self.session:
-            cookies,login_headers=await self._login()
+            return await self._login()
         
     async def load_data_from_url(self,config_data_form_input,user_input_form_data):
         data_from=self.data_from

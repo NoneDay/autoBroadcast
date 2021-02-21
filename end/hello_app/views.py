@@ -1,14 +1,42 @@
 from datetime import datetime
 import requests,os,sys, traceback
 from flask import Flask, render_template, request,session,flash,make_response,redirect,send_from_directory,session,Blueprint,url_for,jsonify
+from flask import  has_request_context, copy_current_request_context
 from hello_app import app
 from hnclic import convert_main as ce,glb
 import json,asyncio
 from werkzeug.utils import secure_filename
 import pymssql
 from data_adapter.DataInterface import DataInterface
+import hnclic.tasks
+
+from functools import wraps
+from concurrent.futures import Future, ThreadPoolExecutor
 
 mg = Blueprint('mg', __name__, template_folder='templates')
+
+def run_async(func):
+    @wraps(func)
+    def _wrapper(*args, **kwargs):
+        call_result = Future()
+        def _run():
+            loop = asyncio.new_event_loop()
+            try:
+                result = loop.run_until_complete(func(*args, **kwargs))
+            except Exception as error:
+                call_result.set_exception(error)
+            else:
+                call_result.set_result(result)
+            finally:
+                loop.close()
+ 
+        loop_executor = ThreadPoolExecutor(max_workers=1)
+        if has_request_context():
+            _run = copy_current_request_context(_run)
+        loop_future = loop_executor.submit(_run)
+        loop_future.result()
+        return call_result.result()
+    return _wrapper
 
 @mg.route("/chg/<int:id>")
 def chg(id):
@@ -31,55 +59,44 @@ def errorhandler_500(error):
     resp = make_response(jsonify(traceback_details), 500)
     return resp
 
+import pandas as pd
 @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
-def getOneDsDataHtmlTable():
+@run_async
+async def getOneDsDataHtmlTable():
     config_data=request.json['config_data']
-    ret= load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
+    ret=await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
     return {
-            "html":ret['data'][:20].to_html(index=False)
+            "html":pd.read_json(ret)[:20].to_html(index=False)
             ,'config_data':config_data
-            ,"form_input": ret.get("form_input",'')
-            ,"columns_name":ret['header']
-            ,"appended_cloumns":ret['p'].get('appended_cloumns',list())
-            ,"last_cloumns":ret['p'].get('last_cloumns',list())
-            ,"data_from":ret.get('data_from')}
+            }
 
-def load_one_data(config_data,data_from,param,curr_report_id):
-    ret={}
-    #if data_from['type']=='html':
-    #    ret=ce.load_from_url2(data_from=data_from,config_data=config_data)
-    #if data_from['type']=='file':
-    #    filename=os.path.join(user_report_upload_path(curr_report_id), secure_filename(data_from['url']))
-    #    ret=ce.load_from_file(filename,[param])
-    #if data_from['type']=='sql':
-    #    ret=ce.load_all_data(config_data,upload_path=user_report_upload_path(curr_report_id))#user_report_upload_path
+async def load_one_data(config_data,data_from,param,curr_report_id):
     glb.redis.sadd("zb:executing",curr_report_id)
     try:
-        ret,ds_dict=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])#user_report_upload_path
-        return ret[param['name']] if param is not None and param.get('name','')!='' else ret['修改这里']#list(ret.values())[-1]
+        task_result=hnclic.tasks.load_all_data.delay(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
+        while not task_result.ready():
+            await asyncio.sleep(0.1)
+        if task_result.status=='FAILURE':
+            raise RuntimeError(task_result.traceback.replace('\n','<br>\n'))
+        _,ds_dict=task_result.result
+        #ds_dict=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
+        return ds_dict[param['name']] if param is not None and param.get('name','')!='' else ds_dict['修改这里']#list(ret.values())[-1]
     finally:
         glb.redis.srem("zb:executing",curr_report_id)
 
-@mg.route("/text_template_exec/", methods=['GET', 'POST'])
-def text_template_exec():
-    id=request.json['curr_report_id']
-    glb.redis.sadd("zb:executing",id)
-    try:
-        ret_dataset,ds_dict=ce.load_all_data(request.json['config_data'],upload_path=glb.user_report_upload_path(request.json['curr_report_id']),userid=session['userid'])
-        env = ce.get_jinja2_Environment()
-        template = env.from_string(request.json['text_template'])
-        result=template.render(**{k:v['data'] for k,v in ret_dataset.items()})
-        return result
-    finally:
-        glb.redis.srem("zb:executing",id)
-
 @mg.route("/files_template_exec/<int:id>", methods=['GET', 'POST'])
-def files_template_exec(id):
+@run_async
+async def files_template_exec(id):
     ret_files=[]
     config_data=request.json['config_data']
     glb.redis.sadd("zb:executing",id)
     try:
-        ret_files,tpl_results=ce.files_template_exec(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'],wx_queue=glb.msg_queue)
+        task_result=hnclic.tasks.files_template_exec.delay(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
+        while not task_result.ready():
+            await asyncio.sleep(0.1)
+        if task_result.status=='FAILURE':
+            raise RuntimeError(task_result.traceback.replace('\n','<br>\n'))            
+        ret_files,tpl_results=task_result.result
         return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results})
     finally:
         glb.redis.srem("zb:executing",id)
@@ -206,11 +223,12 @@ def getLoginGetDataTemplate():
         'login_tbl':login_tbl}
 
 @mg.route("/login_tbl/", methods=['POST'])
-def login_tbl():
+@run_async
+async def login_tbl():
     data=request.json
     data['userid']=session['userid']
     di=DataInterface(None,session['userid'],glb.getSysRegister(data['sys_name']),data)
-    asyncio.run(di.login_check()) 
+    cookies,login_headers=await di.login_check()
     with glb.db_connect() as conn:
         with conn.cursor(as_dict=True) as cursor:
             cursor.execute(""" MERGE INTO [login_tbl] t 

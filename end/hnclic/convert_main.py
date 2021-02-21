@@ -441,20 +441,17 @@ def load_all_data(config_data,id,appendFunDict=None,upload_path=None,userid=None
         finally:
             wb.close()
             wb=None
-    #for index,row in ret['a']['data'].iterrows():
-    #    print(row)
-    for x in ret:
-        del ds_dict[x]
-    return ret,ds_dict
-
+    return ds_dict
 
 def files_template_exec(id,config_data,userid,app_save_path,appendFunDict=None,wx_queue=None):
     '''
     生成模板文件
     '''
+    if wx_queue is None:
+        wx_queue=glb.msg_queue
     upload_path=f"{app_save_path}\\{userid}\\{id}"
-    ret_dataset,ds_dict=load_all_data(config_data,id,appendFunDict,upload_path=upload_path,userid=userid)
-    ds_dict={**{k:v['data'] for k,v in ret_dataset.items()},**ds_dict}
+    ds_dict=load_all_data(config_data,id,appendFunDict,upload_path=upload_path,userid=userid)
+    #ds_dict={**{k:v['data'] for k,v in ret_dataset.items()},**ds_dict}
     
     if(config_data.get("vars") is not None):
         for one_var in config_data["vars"]:
