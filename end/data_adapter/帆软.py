@@ -11,7 +11,8 @@ class MyDataInterface(DataInterface):
     def __init__(self,data_from,userid,login_getData_template,user_password):
         super().__init__(data_from,userid,login_getData_template,user_password)
         self.soup=None
- 
+        self.dropNaNColumn=True
+
     def __parse3(self,fr_sjon):
         detail=fr_sjon['pageContent']['detail']
         cellData=detail[0]['cellData']
@@ -79,13 +80,14 @@ class MyDataInterface(DataInterface):
         param_list=yaml.unsafe_load( re.sub("\"listeners\":\[\{[\s|\S]*?\}\],","",form_refresh_html_text) )['parameter']
         form_inputs=self.parse_params(param_list)
         #先提交参数
-        form_data={"__parameters__":json.dumps({**form_inputs,**input_params})}
+        form_data={"__parameters__":json.dumps({**{x['name']:x['value'] for x in form_inputs},**input_params})}
         param_url=f"{url_head}/view/report?op=fr_dialog&cmd=parameters_d"
         text,content_type,status,_=await super().post(param_url,data=form_data)
         result_url=f"{url_head}/view/report?toVanCharts=true&dynamicHyperlink=true&op=page_content&cmd=json&sessionID={sessionID}&fine_api_v_json=3&pn=1&__fr_locale__=zh_CN"
         text,content_type,status,_=await super().post(result_url)
         ret,title=self.__parse3(json.loads(text))
         return ret ,form_inputs,title    
+
     async def __getData_2(self,url,sessionID,input_params={}):        
         self.next_headers['sessionID']=sessionID
         url_head=re.search("^http[s]?:[\d]*//[\w|\W|\.]+?/",url)[0]+self.login_data['data']['url']
@@ -95,6 +97,7 @@ class MyDataInterface(DataInterface):
         fit_config=json.loads(fit_config_html_text)
         retDict={}
         title=None
+        form_inputs=[]
         for x in fit_config['elementCases']:
             ret,t_title=await self.__html_frame(f"{url_head}/view/form",data={'op': 'fr_form','cmd':'load_report_content','widgetName':x,'__parameters__':None,'noCache':'',
             '_':int(time.time()),'__boxModel__':True,'reload':None,'_PAPERWIDTH':980,'_PAPERHEIGHT':1003, '_SHOWPARA':True,'_SHOWPARATEMPLATE':False})
@@ -102,32 +105,35 @@ class MyDataInterface(DataInterface):
                 title=t_title
             if len(ret):
                 retDict[x]=ret
-        return retDict,{},title
+        return retDict,form_inputs,title
 
     def parse_params(self,param_json):
-        form_inputs={}
+        form_inputs=[]
         for one in param_json:
+            
             if one.get('widget'):
                 one_param=one.get('widget')
             else:
                 one_param=one
             if one_param['type']=='formsubmit':
                 continue
+            one_input={'name':one_param['widgetName'],'type':one_param['type']}
+            form_inputs.append(one_input)
             if one_param['type'] in['tagcombocheckbox','combo'] and one_param.get('controlAttr'):
                 #if one_param['controlAttr'].get('data'):
                 #    real_value=list(filter(lambda x:x['text']==one_param['value'],one_param['controlAttr']['data']))#one_param['controlAttr']['data']
                 #    #if len(real_value)>0:
                 #    form_inputs[one_param['widgetName']]=real_value[0]['value']
                 #else:
-                form_inputs[one_param['widgetName']]=one_param['value']
+                form_inputs=one_param['value']
                 continue
             elif one_param['type'] in ['label','text']:
-                form_inputs[one_param['widgetName']]=one_param['value']#todo:转unicode 用[]包起来每一个汉字
+                one_input['value']=one_param['value']#todo:转unicode 用[]包起来每一个汉字
             elif one_param['type'] in ['number']:
-                form_inputs[one_param['widgetName']]=int(one_param['value'])#todo:转unicode 用[]包起来每一个汉字
+                one_input['value']=int(one_param['value'])#todo:转unicode 用[]包起来每一个汉字
             elif one_param['type'] in ['datetime']:
                 datetime.datetime.fromtimestamp(one_param['value']['date_milliseconds']/1000)
-                form_inputs[one_param['widgetName']]=arrow.get(one_param['value']['date_milliseconds']/1000).format(one_param['format'].upper() )
+                one_input['value']=arrow.get(one_param['value']['date_milliseconds']/1000).format(one_param['format'].upper() )
             else:
                 raise RuntimeError("没有这种类型转换："+one_param['type'])
         return form_inputs
@@ -141,8 +147,9 @@ class MyDataInterface(DataInterface):
         form_inputs={}
         if param_json.get('html') and param_json['html'].get('items'):
             form_inputs=self.parse_params(param_json['html']['items'])
+            
             #先提交参数
-            form_data={"__parameters__":json.dumps({**form_inputs,**input_params})}
+            form_data={"__parameters__":json.dumps({**{x['name']:x['value'] for x in form_inputs},**input_params})}
             param_url=f"{url_head}/view/report?op=fr_dialog&cmd=parameters_d"
             text,content_type,status,_=await super().post(param_url,data=form_data)
         

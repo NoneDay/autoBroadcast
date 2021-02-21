@@ -220,13 +220,17 @@ export default {
         if(this.obj.where && this.obj.where.length>0){
             let where_arr =[]
             this.obj.where.forEach(x=>{
+              //if (x.field=='__序号__')
+              //  where_arr.push( "(index+1)"+ x.op + x.value.replaceAll(/[‘|’|“|”]/g,'\'') )
+              //else
+              //  where_arr.push( "`"+x.field +"`"+ x.op + x.value.replaceAll(/[‘|’|“|”]/g,'\'') )
               if (x.field=='__序号__')
-                where_arr.push( "(index+1)"+ x.op + x.value.replaceAll(/[‘|’|“|”]/g,'\'') )
+                where_arr.push(`( (${this.obj.ds}.index+1) ${x.op}`+ x.value.replaceAll(/[‘|’|“|”]/g,'\'') +")" )
               else
-                where_arr.push( "`"+x.field +"`"+ x.op + x.value.replaceAll(/[‘|’|“|”]/g,'\'') )
+                where_arr.push(`(${this.obj.ds}['${x.field}']${x.op}`+ x.value.replaceAll(/[‘|’|“|”]/g,'\'') +")")
             }
             )
-            ret_s=ret_s+'.query("""'+ where_arr.join(" & ")  + '""")'
+            ret_s=ret_s+'['+ where_arr.join(" & ")  + ']'
         }
         if(this.obj.group && this.obj.group.filter(x=>x!="__序号__").length>0){
           console.info(this.obj.group)

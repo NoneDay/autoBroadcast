@@ -24,12 +24,14 @@ from handle_file import convert_file_for_xlsx,convert_file_for_txt,convert_file_
 from utils import get_jinja2_Environment,is_number,guess_col_names,exec_template
 import data_adapter
 import colorama 
+
 '''
 “在Windows里，time.strftime使用C运行时的多字节字符串函数strftime，
 这个函数必须先根据当前locale配置来编码格式化字符串（使用PyUnicode_EncodeLocale）。”
 如果不设置好locale的话，根据默认的"C" locale，底层的wcstombs函数会使用latin-1编码（单字节编码）
 来编码格式化字符串，然后导致题主提供的多字节编码的字符串在编码时出错。
 '''
+locale.setlocale(locale.LC_CTYPE, 'chinese')
 #显示所有列
 pd.set_option('display.max_columns', None)
 
@@ -49,13 +51,13 @@ def func_time(func):
     return inner
 
 def pd_read_csv(url):
+    with open(url, 'rb') as f:
+        data = f.read()
+        f_charInfo=chardet.detect(data)                
     try:
-        return pd.read_csv(url)
+        return pd.read_csv(url,encoding=f_charInfo['encoding'])
     except:
         return pd.read_csv(url,encoding='gb2312')
-    #with open(url, 'rb') as f:
-    #    data = f.read()
-    #    f_charInfo=chardet.detect(data)                
     #return pd.read_csv(url,encoding=f_charInfo['encoding'])
 
 def load_from_file(url,d_p):
@@ -96,20 +98,18 @@ async def load_from_url2(data_from=None,config_data=None,upload_path=None,userid
     for p in data_from['ds']:
         resultModel,header,data,json_props=adapter.load_data_for_p(p)
         if resultModel=="TableModel":
-            #删除NULL列
-            data=pd.DataFrame(data,columns=header).replace('',NaN).dropna(axis = 1, how = "all")
-            header=list(data.columns)
+            data=pd.DataFrame(data,columns=header)
         elif resultModel=="JsonModel":
             data=pd.DataFrame(data)[json_props] #按json_props中指定的顺序重排
             data.columns=header#按header重设列名
-            #删除NULL列
-            data=data.replace('',NaN).dropna(axis = 1, how = "all")
-            header=list(data.columns)
             if 'id' in json_props:
                 data=data.drop(['id'], axis=1)
         else:
             raise RuntimeError("适配接口只能返回TableModel或者JsonModel。请联系管理员修改程序")
-        data=data
+        #删除NULL列
+        if adapter.dropNaNColumn:
+            data=data.replace('',NaN).dropna(axis = 1, how = "all")
+            header=list(data.columns)
         #缺省列名为：s+数字
         if isinstance(p['view_columns'],str):
             data.columns=header if p['columns']=='' or p['columns'].startswith("auto") else [('s'+str(x) if is_number(x) else x) for x in range(len(data.loc[0]))]
@@ -354,7 +354,7 @@ def load_all_data(config_data,id,appendFunDict=None,upload_path=None,userid=None
                         val=int(val)
                     ds_dict[one_var["name"]] =val  
             except SyntaxError as e:
-                raise SyntaxError(f'变量<{one_var["name"]}>定义语法错误：'+e.text)
+                raise SyntaxError(f'变量<{one_var["name"]}>定义语法错误：'+str(e))
             except Exception as e:
                 raise SyntaxError(f'变量<{one_var["name"]}>定义语法错误：'+str(e))
             

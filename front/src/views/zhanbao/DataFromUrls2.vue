@@ -17,7 +17,13 @@
         :oldFormInput.sync="url_data.form_input" append-to-body 
         :form-option=" {
           addBtn:false,delBtn:false,cellBtn:true,editBtn:false,cellEdit:true,rowKey:'name',
-          column: [{ prop: 'name', label: '参数名字', cell:false,formslot:true  },{ prop: 'value', label: '参数值', cell:true }] 
+          column: [
+          { prop: 'label', label: '标签', cell:false,formslot:true  },
+          { prop: 'name', label: '参数名字', cell:false,formslot:true  },
+          { prop: 'value', label: '参数值', cell:true },
+          { prop: 'type', label: '类型', cell:true ,formslot:true},
+          { prop: 'valueList', label: '可用值提示', cell:true,formslot:true },
+          ] 
         }"
     />
 

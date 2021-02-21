@@ -51,3 +51,13 @@ new Vue({
   i18n,
   render: h => h(App)
 }).$mount('#app')
+
+if (String.prototype.replaceAll===undefined){
+String.prototype.replaceAll = function (targetStr, newStr) {
+  var sourceStr = this.valueOf();
+  while (sourceStr.indexOf(targetStr) !== -1) {
+    sourceStr = sourceStr.replace(targetStr, newStr);
+  }
+  return sourceStr;
+};
+}

@@ -6,7 +6,7 @@ import pandas as pd
 import pandasql,excel2img
 from numpy import nan as NaN
 from functools import reduce
-import jinja2,datetime,chardet,time,traceback,locale,copy
+import jinja2,datetime,chardet,time,traceback,copy
 from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE#MSO_SHAPE_TYPE.EMBEDDED_OLE_OBJECT
 from pptx.chart.data import ChartData
@@ -16,7 +16,7 @@ from openpyxl  import load_workbook
 import asyncio
 import aiohttp
 from utils import unzip_single,zipDir,get_jinja2_Environment,is_number,exec_template,guess_col_names
-locale.setlocale(locale.LC_CTYPE, 'chinese')
+
 
 def convert_file_for_txt(out_filename,template_file,ds_dict):
     '''按模板转换文本文件

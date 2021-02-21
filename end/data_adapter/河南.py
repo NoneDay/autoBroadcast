@@ -29,6 +29,7 @@ class MyDataInterface(DataInterface):
         self.soup=None
         self.start_time = time.time()
         self.pattern_dict={}
+        
     async def getData(self,url,input_params={}):        
         for i in range(1,30):
             self.html_text,response_content_type,response_status=await self._load_html(url,input_params)
@@ -48,7 +49,8 @@ class MyDataInterface(DataInterface):
         #新版报表可直接返回json，先按json处理，如果不能处理，就按老版本的方式处理
         if response_content_type=='application/json':
             self.soup =json.loads(self.html_text)
-            form_inputs={  x['name']:"默认值" for x in self.soup['form'] }
+            #form_inputs={  x['name']:"默认值" for x in self.soup['form'] }
+            form_inputs=[{'name':x['name'],'value':"默认值",'label':x['prompt'],'type':x['data_type'],'valueList':x['tagValueList']} for x in self.soup['form'] ]
             
             self.is_cr_json=True
             if data_from['ds'] is None or len(data_from['ds'])==0:
@@ -60,21 +62,21 @@ class MyDataInterface(DataInterface):
                         "start": soup_first_data['colName_lines'][1]+1,"columns": "auto","view_columns": "","sort": "","name": "修改这里",
                         "old_columns": soup_first_data['columns']}]
                 data_from['desc']=soup_first_data['title']
-                data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
         else:
             self.soup = lxml.html.fromstring(self.html_text) 
             #查出来取数form所需要的参数，传递给前台设置到config中
-            form_inputs={x.attrib['name']:"默认值" for x in self.soup.xpath('//form/input|//form/select') }
+            form_inputs=[]
+            for x in self.soup.xpath('//form/input|//form/select'):
+                one={'name':x.attrib['name'],'value':"默认值" ,'type':x.get('type')}
+                if x.attrib.get('data-options'):
+                    one['valueList']=re.search('data:\[([\s|\S]*)',x.attrib['data-options'])[1]
+                form_inputs.append(one)
             print(f"{data_from['url']}分析html用时： {time.time()-self.start_time}")
 
             if data_from['ds'] is None or len(data_from['ds'])==0:
                 data_from['ds'],data_from['desc']=self._guess_ds()
-                data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
             print(f"{data_from['url']}_guess_ds用时： {time.time()-self.start_time}")
-        #使用原先定义的参数设置覆盖缺省的
-        form_inputs= {**form_inputs,**{x["name"]:x["value"] for x in data_from['form_input']}}
-        data_from['form_input']=[{'name':k,'value':v} for (k,v) in form_inputs.items()]
-        return self.soup,{},None
+        return self.soup,form_inputs,None
 
     async def _load_html(self,url,input_params):
         '''
