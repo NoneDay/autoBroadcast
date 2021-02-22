@@ -37,8 +37,7 @@ register('myjson', my_dumps, json.loads,
     content_type='application/x-myjson',
     content_encoding='utf-8') 
 
-# Tell celery to use your new serializer:
-
+# https://www.jianshu.com/p/66707b1e7787 CELERY 常用配置介绍
 
 BROKER_URL = 'redis://127.0.0.1:6379' # 使用Redis作为消息代理
 
@@ -53,9 +52,9 @@ CELERY_TASK_RESULT_EXPIRES = 60 * 60 * 24 # 任务过期时间
 CELERYD_CONCURRENCY = 20  # 并发worker数
 CELERYD_FORCE_EXECV = True    # 非常重要,有些情况下可以防止死锁
  
-CELERYD_PREFETCH_MULTIPLIER = 1
+CELERYD_PREFETCH_MULTIPLIER = 4 # elery worker每次去redis取任务的数量
  
-CELERYD_MAX_TASKS_PER_CHILD = 100 # 每个worker最多执行万100个任务就会被销毁，可防止内存泄露
+CELERYD_MAX_TASKS_PER_CHILD = 200 # 每个worker最多执行万100个任务就会被销毁，可防止内存泄露
 # CELERYD_TASK_TIME_LIMIT = 60    # 单个任务的运行时间不超过此值，否则会被SIGKILL 信号杀死 
 # BROKER_TRANSPORT_OPTIONS = {'visibility_timeout': 90}
 # 任务发出后，经过一段时间还未收到acknowledge , 就将任务重新交给其他worker执行
