@@ -47,7 +47,7 @@ CELERY_TASK_SERIALIZER = 'myjson' # 任务序列化和反序列化使用msgpack�
 
 CELERY_RESULT_SERIALIZER = 'myjson' # 读取任务结果一般性能要求不高，所以使用了可读性更好的JSON
 
-CELERY_TASK_RESULT_EXPIRES = 60 * 60 * 24 # 任务过期时间
+CELERY_TASK_RESULT_EXPIRES = 60 * 24 # 任务过期时间
 
 CELERYD_CONCURRENCY = 20  # 并发worker数
 CELERYD_FORCE_EXECV = True    # 非常重要,有些情况下可以防止死锁

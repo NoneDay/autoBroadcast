@@ -147,7 +147,7 @@ def guess_col_names(all_lines,rule_str=None,end_line=None):
     def inner_func(x,y,i=0):
         return x+[y] if y not in x else x+[y+str(i)] if (y+str(i)) not in x else inner_func(x,y,i+1)
     ret=reduce(inner_func, [[], ] + ret) #将重复的表头后面加上序号
-    return list(map(lambda x:re.sub(r"[\s|'|\"|（|）]+","",x),ret))  ,end_line  #去除特殊字符
+    return list(map(lambda x:re.sub(r"[\s|'|\"]+","",x),ret))  ,end_line  #去除特殊字符
 
 __special_characters_replacements={
     "“":"\"",

@@ -59,47 +59,78 @@ def errorhandler_500(error):
     resp = make_response(jsonify(traceback_details), 500)
     return resp
 
-import pandas as pd
-@mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
-@run_async
-async def getOneDsDataHtmlTable():
-    config_data=request.json['config_data']
-    ret=await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
-    return {
-            "html":pd.read_json(ret)[:20].to_html(index=False)
-            ,'config_data':config_data
-            }
+if glb.is_test:
+    @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
+    def getOneDsDataHtmlTable():
+        config_data=request.json['config_data']
+        ret=load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
+        return {
+                "html":ret[:20].to_html(index=False)
+                ,'config_data':config_data
+                }
 
-async def load_one_data(config_data,data_from,param,curr_report_id):
-    glb.redis.sadd("zb:executing",curr_report_id)
-    try:
-        task_result=hnclic.tasks.load_all_data.delay(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
-        while not task_result.ready():
-            await asyncio.sleep(0.1)
-        if task_result.status=='FAILURE':
-            raise RuntimeError(task_result.traceback.replace('\n','<br>\n'))
-        _,ds_dict=task_result.result
-        #ds_dict=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
-        return ds_dict[param['name']] if param is not None and param.get('name','')!='' else ds_dict['修改这里']#list(ret.values())[-1]
-    finally:
-        glb.redis.srem("zb:executing",curr_report_id)
+    def load_one_data(config_data,data_from,param,curr_report_id):
+        glb.redis.sadd("zb:executing",curr_report_id)
+        try:
+            ds_dict=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
+            #ds_dict=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
+            return ds_dict[param['name']] if param is not None and param.get('name','')!='' else ds_dict['修改这里']#list(ret.values())[-1]
+        finally:
+            glb.redis.srem("zb:executing",curr_report_id)
 
-@mg.route("/files_template_exec/<int:id>", methods=['GET', 'POST'])
-@run_async
-async def files_template_exec(id):
-    ret_files=[]
-    config_data=request.json['config_data']
-    glb.redis.sadd("zb:executing",id)
-    try:
-        task_result=hnclic.tasks.files_template_exec.delay(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
-        while not task_result.ready():
-            await asyncio.sleep(0.1)
-        if task_result.status=='FAILURE':
-            raise RuntimeError(task_result.traceback.replace('\n','<br>\n'))            
-        ret_files,tpl_results=task_result.result
-        return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results})
-    finally:
-        glb.redis.srem("zb:executing",id)
+    @mg.route("/files_template_exec/<int:id>", methods=['GET', 'POST'])
+    def files_template_exec(id):
+        ret_files=[]
+        config_data=request.json['config_data']
+        glb.redis.sadd("zb:executing",id)
+        try:
+            ret_files,tpl_results=ce.files_template_exec(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
+            return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results})
+        finally:
+            glb.redis.srem("zb:executing",id)
+else:
+    import pandas as pd
+    @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
+    @run_async
+    async def getOneDsDataHtmlTable():
+        config_data=request.json['config_data']
+        ret=await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
+        return {
+                "html":pd.read_json(ret)[:20].to_html(index=False)
+                ,'config_data':config_data
+                }
+
+    async def load_one_data(config_data,data_from,param,curr_report_id):
+        glb.redis.sadd("zb:executing",curr_report_id)
+        try:
+            task_result=hnclic.tasks.load_all_data.delay(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
+            while not task_result.ready():
+                await asyncio.sleep(0.1)
+            if task_result.status=='FAILURE':
+                raise RuntimeError(task_result.traceback.replace('\n','<br>\n'))
+            _,ds_dict,ret_config_data=task_result.result
+            config_data.update(ret_config_data)            
+            return ds_dict[param['name']] if param is not None and param.get('name','')!='' else ds_dict['修改这里']#list(ret.values())[-1]
+        finally:
+            glb.redis.srem("zb:executing",curr_report_id)
+
+    @mg.route("/files_template_exec/<int:id>", methods=['GET', 'POST'])
+    @run_async
+    async def files_template_exec(id):
+        ret_files=[]
+        config_data=request.json['config_data']
+        glb.redis.sadd("zb:executing",id)
+        try:
+            task_result=hnclic.tasks.files_template_exec.delay(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
+            while not task_result.ready():
+                await asyncio.sleep(0.1)
+            if task_result.status=='FAILURE':
+                raise RuntimeError(task_result.traceback.replace('\n','<br>\n'))            
+            ret_files,tpl_results=task_result.result
+            return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results})
+        finally:
+            glb.redis.srem("zb:executing",id) 
+
 
 @mg.route("/ReportDefine/get/<int:id>")
 def ReportDefine_get(id):

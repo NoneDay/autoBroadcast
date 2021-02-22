@@ -40,7 +40,7 @@ def load_all_data(config_data,id,args=None,upload_path=None,userid=None):
             df_arr.append(k)
         elif k[:2]!='__':
             ret[k]=v
-    return df_arr,ret
+    return df_arr,ret,config_data
 
 @zbTaskApp.task
 def cut_image_xlsx(fn_excel, fn_image, page=None, _range=None):
