@@ -545,7 +545,12 @@ async def files_template_exec(id,config_data,userid,app_save_path,appendFunDict=
                 t_ds_dict["_loop_"]=row
                 t_ds_dict["_idx_"]=idx+1
                 loop_one_txt(one_part,t_ds_dict,idx)
-    return ret_files,tpl_results
+
+    out_files=f"{upload_path}/../../tmp/{id}/"
+    if os.path.exists(out_files):
+        out_files=os.listdir(out_files)
+
+    return ret_files,tpl_results,out_files
 
 if __name__ == '__main__':
     import glb

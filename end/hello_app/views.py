@@ -59,7 +59,7 @@ def errorhandler_500(error):
     resp = make_response(jsonify(traceback_details), 500)
     return resp
 
-if glb.is_test==False:
+if glb.is_test:
     @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
     @run_async
     async def getOneDsDataHtmlTable():
@@ -86,8 +86,8 @@ if glb.is_test==False:
         config_data=request.json['config_data']
         glb.redis.sadd("zb:executing",id)
         try:
-            ret_files,tpl_results=await ce.files_template_exec(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
-            return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results})
+            ret_files,tpl_results,all_files=await ce.files_template_exec(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
+            return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results,"all_files":all_files})
         finally:
             glb.redis.srem("zb:executing",id)
 else:
@@ -131,8 +131,9 @@ else:
                 await asyncio.sleep(0.1)
             if task_result.status=='FAILURE':
                 raise RuntimeError(task_result.traceback.replace('\n','<br>\n'))            
-            ret_files,tpl_results=task_result.result
-            return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results})
+            all_files=None
+            ret_files,tpl_results,all_files=task_result.result
+            return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results,"all_files":all_files})
         finally:
             glb.redis.srem("zb:executing",id) 
 
@@ -231,6 +232,10 @@ def download_file_t(id,filename):
 @mg.route("/file/download/<int:id>/<filename>",methods=['get'])
 def download_file(id,filename):
     return send_from_directory(glb.user_report_upload_path(id), filename,as_attachment=True)
+
+@mg.route("/image_file/<int:id>/<filename>",methods=['get'])
+def image_file(id,filename):
+    return send_from_directory(f"{glb.config['UPLOAD_FOLDER']}/tmp/{id}", filename)
 
 @mg.route("/file/remove/<int:id>/<filename>",methods=['post'])
 def remove_file(id,filename):

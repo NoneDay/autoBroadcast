@@ -149,23 +149,35 @@
     <el-dialog :visible.sync="data.files_template_exec_result_visilbe" v-if="data.files_template_exec_result_visilbe" title="按模板生成的结果" 
     :close-on-click-modal='false' append-to-body>
         <template>
-          <el-table :data="data.files_template_exec_result.ret_files" style="width: 100%">
-            <el-table-column prop="name" label="文件名" width="180"> </el-table-column>
-            <el-table-column prop="message" label="信息" width="180"> </el-table-column>
-            <el-table-column label="操作">
-                <template slot-scope="scope">
-                  <span v-if="scope.row.url!=''">
-                    <el-button size="mini" @click="file_handlePreview_t(scope.row)">下载</el-button>
-                  </span>
-                </template>
-              </el-table-column>
-          </el-table>
+          <el-tabs value="first">
+          <el-tab-pane label="模板结果" name="first">
+              <el-table :data="data.files_template_exec_result.ret_files" style="width: 100%">
+                <el-table-column prop="name" label="文件名" width="180"> </el-table-column>
+                <el-table-column prop="message" label="信息" width="180"> </el-table-column>
+                <el-table-column label="操作">
+                    <template slot-scope="scope">
+                      <span v-if="scope.row.url!=''">
+                        <el-button size="mini" @click="file_handlePreview_t(scope.row)">下载</el-button>
+                      </span>
+                    </template>
+                  </el-table-column>
+              </el-table>
 
-        <avue-comment :props=" {avatar: 'img',author: 'name',body: 'result'}" 
-          :data="one" :key="one.name" v-for="one in data.files_template_exec_result.tpl_results" >
-           <i class="el-icon-delete" @click="$message('自定义菜单')"></i>
-        </avue-comment>        
-
+              <avue-comment :props=" {avatar: 'img',author: 'name',body: 'result'}" 
+                :data="one" :key="one.name" v-for="one in data.files_template_exec_result.tpl_results" >
+                <i class="el-icon-delete" @click="$message('自定义菜单')"></i>
+              </avue-comment>        
+          </el-tab-pane>
+          <el-tab-pane  label="生成的图片" name="one_png">
+            <div style="display: inline-block;    padding: 10px;"  v-for="one in all_image" :key="one">
+              <el-image  style="width: 100px; height: 100px"  :z-index="2000000"
+              :src="one" 
+              :preview-src-list="all_image" 
+              ></el-image>
+            </div>
+          </el-tab-pane>
+          
+        </el-tabs>
         </template>
         <div slot="footer" class="dialog-footer">
             <el-button @click="data.files_template_exec_result_visilbe = false">关闭</el-button>
@@ -183,13 +195,21 @@ import template_output_dialog from './template_output_dialog'
 import formDialog from './formDialog'
 import * as service from '@/api/zhanbao'
 import CronInput from 'vue-cron-generator/src/components/cron-input'
-import { DEFAULT_CRON_EXPRESSION } from 'vue-cron-generator/src/constant/filed'
+import { baseUrl } from '@/config/env';
 
 const datas={}
 export default {
   name: 'Zhanbao',
   components: { dataFromUrls, dataDetail, template_output_dialog, formDialog,varDetailDialog,tinymceDialog,CronInput},
   computed:{
+    all_image(){
+      let rets=[]
+      this.data.files_template_exec_result?.all_files?.filter(x=> x.endsWith('.png')|| x.endsWith('.JPG') ).forEach(one_png=>
+      {
+        rets.push(baseUrl+'/mg/image_file/'+ this.data.curr_report_id+'/'+one_png )
+      })
+      return rets
+    },
     all_ds(){
       let ret_arr=[]
       if(this.data.config_data.data_from)
