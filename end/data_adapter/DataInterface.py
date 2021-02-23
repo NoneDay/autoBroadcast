@@ -87,12 +87,15 @@ class DataInterface():
             self.next_cookies={**cookies,**next_cookies}
             self.next_headers={**login_headers,**next_headers}
             url,real_form_data=get_real_form_data(data_from,config_data_form_input,user_input_form_data)
+            print("开始url执行取数："+url)
             self.data,form_inputs,title=await self.getData(url,real_form_data)
-
+            print("url执行完毕："+url)
+            if self.data is None or len(self.data)==0:
+                raise RuntimeError("网址<"+data_from["url"]+">无数据，请检查设置是否正确.")
         if data_from['ds'] is None or len(data_from['ds'])==0:
             if data_from['desc'] is None or data_from['desc']=='':
                 data_from['desc']=title
-            if isinstance(self.data,dict):
+            if isinstance(self.data,dict):# 多个数据集是按dict 返回的
                 data_from['ds']=[]
                 for k,v in self.data.items():
                     data_from['ds'].append({"t": "json","pattern": k,"end":10000,
@@ -121,9 +124,11 @@ class DataInterface():
         start=int(p['start'])
         end=1000000 if not p['end'] else( int(p['start'])+int(p['end']) if isinstance(p['end'],str) and p['end'][0]=='+' else int(p['end']))
         if isinstance(self.data,dict):
-            data=self.data[ p['pattern']]            
+            data=self.data.get(p['pattern'])
         else:
             data=self.data
+        if data is None or len(data)==0:
+            raise RuntimeError("数据集<"+p["name"]+">无数据，请检查设置是否正确.通常做法：删除你手工建的数据集，然后直接点击查看数据就可以自动生成。")
         header,_=guess_col_names(data,p['columns'],start)
         return "TableModel",header,data[start:end],None 
     

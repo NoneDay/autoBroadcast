@@ -75,14 +75,22 @@ def _sendWxMessage(res):
     elif wxid.startswith("yzl:"):
         if res['type']=="sendMessage":
             #云助理开发环境
-            res=requests.post(ini['yzl']['url'],params={"userid":ini['yzl']['userid'],"pwd":ini['yzl']['pwd'],"opt":3,"opt_number":wxid[4:],"type":0,"msg":content})
-            print("==")
+            res=requests.post(ini['yzl']['url'],
+                    data={"userid":ini['yzl']['userid'],
+                    "pwd":ini['yzl']['pwd'],
+                    "opt":3,
+                    "opt_number":wxid[4:],
+                    "type":0,
+                    "msg":content # .replace("%",'%25'),
+                    })
+            print(res.text)
         elif res['type']=="sendImage":
             with open(content,'rb') as f:
                 data = f.read()
             files ={'image':('20200528143836.png',data,'application/octet-stream')}
             #files ={'image':('20200528143836.png',open('F:\\hello_flask\\文档/微信图片_20200528143836.png','rb'),'application/octet-stream')}
             res=requests.post(ini['yzl']['url'],params={"userid":ini['yzl']['userid'],"pwd":ini['yzl']['pwd'],"opt":3,"opt_number":wxid[4:],"type":1},files=files)
+            print(res)
     
     elif wxid.startswith("yfw:"):
         if res['type']=="sendMessage":
@@ -186,7 +194,7 @@ def zb_execute(rptid,config_data,userid,report_name=""):
     try:
         redis.sadd("zb:executing",rptid)
         #asyncio.set_event_loop(loop)
-        ce.files_template_exec(rptid,config_data,userid,config['UPLOAD_FOLDER'],wx_queue=msg_queue)
+        asyncio.run(ce.files_template_exec(rptid,config_data,userid,config['UPLOAD_FOLDER'],wx_queue=msg_queue))
     except Exception as e:
         msg_queue.put({'type':'sendMessage',"wxid":'qywx:'+userid,"content":f"{report_name},执行报错。错误信息："+ str(e)})
         print({'type':'sendMessage',"wxid":'qywx:'+userid,"content":f"{report_name},执行报错。错误信息："+ str(e)})

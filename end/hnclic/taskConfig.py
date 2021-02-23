@@ -39,6 +39,8 @@ register('myjson', my_dumps, json.loads,
 
 # https://www.jianshu.com/p/66707b1e7787 CELERY 常用配置介绍
 
+CELERY_TIMEZONE = 'Asia/Shanghai'
+
 BROKER_URL = 'redis://127.0.0.1:6379' # 使用Redis作为消息代理
 
 CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/2' # 把任务结果存在了Redis
@@ -49,16 +51,18 @@ CELERY_RESULT_SERIALIZER = 'myjson' # 读取任务结果一般性能要求不高
 
 CELERY_TASK_RESULT_EXPIRES = 60 * 24 # 任务过期时间
 
-CELERYD_CONCURRENCY = 20  # 并发worker数
+CELERYD_CONCURRENCY = 1  # 并发worker数
 CELERYD_FORCE_EXECV = True    # 非常重要,有些情况下可以防止死锁
  
-CELERYD_PREFETCH_MULTIPLIER = 4 # elery worker每次去redis取任务的数量
+CELERYD_PREFETCH_MULTIPLIER = 1 # elery worker每次去redis取任务的数量
  
 CELERYD_MAX_TASKS_PER_CHILD = 200 # 每个worker最多执行万100个任务就会被销毁，可防止内存泄露
 # CELERYD_TASK_TIME_LIMIT = 60    # 单个任务的运行时间不超过此值，否则会被SIGKILL 信号杀死 
 # BROKER_TRANSPORT_OPTIONS = {'visibility_timeout': 90}
 # 任务发出后，经过一段时间还未收到acknowledge , 就将任务重新交给其他worker执行
 CELERY_DISABLE_RATE_LIMITS = True   
+
+CELERY_ACK_LATE = True
 
 CELERY_ACCEPT_CONTENT = ['myjson'] # 指定接受的内容类型
 

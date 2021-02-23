@@ -24,6 +24,7 @@ from handle_file import convert_file_for_xlsx,convert_file_for_txt,convert_file_
 from utils import get_jinja2_Environment,is_number,guess_col_names,exec_template
 import data_adapter
 import colorama 
+import glb
 
 '''
 “在Windows里，time.strftime使用C运行时的多字节字符串函数strftime，
@@ -251,7 +252,7 @@ def appendData_and_execLastSql(one_ds,ret,upload_path):
 
 
 @func_time
-def load_all_data(config_data,id,appendFunDict=None,upload_path=None,userid=None,args=None):
+async def load_all_data(config_data,id,appendFunDict=None,upload_path=None,userid=None,user_input_form_data=None):
     print(threading.currentThread().name)
     ret={}
     start_time = time.time()
@@ -268,11 +269,13 @@ def load_all_data(config_data,id,appendFunDict=None,upload_path=None,userid=None
                 ret={**ret,**load_from_file(filename,one['ds'])}
                 continue
             #elif one['type'] in ['json','html']:
-            tasks.append(load_from_url2(one,config_data,upload_path,userid,user_input_form_data=args))
+            tasks.append(load_from_url2(one,config_data,upload_path,userid,user_input_form_data=user_input_form_data))
         return await asyncio.gather(*tasks,return_exceptions=True),ret
         #status_list = loop.run_until_complete(asyncio.gather(*tasks))
     #https://yanbin.blog/how-flask-work-with-asyncio/#more-10368 关于flask中的异步，这里讲的比较详细
-    status_list,ret=asyncio.run(_inner_task(ret)) 
+    #status_list,ret=asyncio.run(_inner_task(ret)) 
+    status_list,ret=await _inner_task(ret)
+    
     for t in status_list:
         if isinstance(t,dict):
             ret={**ret,**t}  
@@ -443,14 +446,14 @@ def load_all_data(config_data,id,appendFunDict=None,upload_path=None,userid=None
             wb=None
     return ds_dict
 
-def files_template_exec(id,config_data,userid,app_save_path,appendFunDict=None,wx_queue=None):
+async def files_template_exec(id,config_data,userid,app_save_path,appendFunDict=None,wx_queue=None):
     '''
     生成模板文件
     '''
     if wx_queue is None:
         wx_queue=glb.msg_queue
     upload_path=f"{app_save_path}\\{userid}\\{id}"
-    ds_dict=load_all_data(config_data,id,appendFunDict,upload_path=upload_path,userid=userid)
+    ds_dict=await load_all_data(config_data,id,appendFunDict,upload_path=upload_path,userid=userid)
     #ds_dict={**{k:v['data'] for k,v in ret_dataset.items()},**ds_dict}
     
     if(config_data.get("vars") is not None):

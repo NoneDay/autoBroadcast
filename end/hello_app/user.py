@@ -119,41 +119,9 @@ def yzl_info():
     return """ @助手 list   可以看到所有自己做的战报ID 和名字
  @助手 战报ID   执行战报
     """
+#from hello_app.views import run_async
 
-@app.route("/api/raw/<int:id>/<rawtype>/<ds_names>")
-def raw_get(id,rawtype,ds_names):
-    glb.redis.hincrby("zb:tj",'api')
-    ds_names=ds_names.split(',')
-    cur=None
-    with glb.db_connect() as conn:
-        with conn.cursor(as_dict=True) as cursor:
-            cursor.execute('SELECT * FROM zhanbao_tbl WHERE id=%s', id)
-            config_data= json.loads(cursor.fetchone()['config_txt'])
-    #for one_data_from in json.loads(cur_row['config_txt'])['data_from'] for one on one_data_from['ds'] is one['name'] in ds_names
-    args={**request.args,**request.form}
-    ds_dict=ce.load_all_data(config_data,id,args=args,upload_path=glb.user_report_upload_path(id),userid=glb.ini['user_login']['test_user'])
-    ret_dict=dict({key:value for key,value in ds_dict.items() if key in ds_names})
-    rawtype=rawtype.split(":")
-    ret_str='{"errcode":0,"message":"success",'
-    if rawtype[0]=='json':
-        '''json的格式如下
-        split ，样式为 {index -> [index], columns -> [columns], data -> [values]}
-        records ，样式为[{column -> value}, … , {column -> value}]
-        index ，样式为 {index -> {column -> value}}
-        columns ，样式为 {index -> {column -> value}}
-        values ，数组样式
-        table ，样式为{‘schema': {schema}, ‘data': {data}}，和records类似
-        '''
-        json_type='records'
-        if len(rawtype)==2 :
-            if rawtype[1] in "split,records,index,columns,values,table":
-                json_type=rawtype[1]
-            else:
-                return '{"errcode":1,"message":"json选择的类型不正确，应该是下面之一： split,records,index,columns,values,table"}'
-        for key,value in ret_dict.items():
-            ret_str=ret_str+'\n"' + key+'":' + value.to_json(orient=json_type,force_ascii=False)+','
-    ret_str=ret_str[:-1]+'}'
-    return ret_str
+
 
 #####################################################
 # 登录相关

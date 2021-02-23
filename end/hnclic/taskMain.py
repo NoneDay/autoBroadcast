@@ -9,11 +9,16 @@ from celery.schedules import crontab
 zbTaskApp = Celery('Zhanbao', include=['hnclic.tasks'])
 zbTaskApp.config_from_object('hnclic.taskConfig')
 
-# celery -A hnclic.taskMain worker --pool=solo --loglevel=info 
+# start /b celery -A hnclic.taskMain worker --pool=solo --loglevel=info -n worker1@%h -E
+# start /b celery -A hnclic.taskMain worker -P celery_pool_asyncio:TaskPool --loglevel=info -n worker2@%h
+# start /b celery -A hnclic.taskMain worker -P eventlet --loglevel=info -n worker3@%h
+# start /b celery -A hnclic.taskMain worker --pool=prefork --loglevel=info -n worker4@%h
+# start /b flower --broker=redis://127.0.0.1:6379
+# 
 # -P eventlet
 
 # flower -A hnclic.taskMain worker --pool=solo --loglevel=info 
-# flower --broker=redis://127.0.0.1:6379
+
 if __name__ == '__main__':
     app.start()
 

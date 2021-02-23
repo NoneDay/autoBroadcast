@@ -117,11 +117,15 @@ class MyDataInterface(DataInterface):
         elif p['t']=="json":#这是老格式的大数据报表分析
             start_pos=re.search(p['start'],self.html_text).regs[0][1]
             end_pos=re.search("/\*-end-\*/" if p['end']=="/*-end-*/" else p['end'],self.html_text).regs[0][0]
+            json_txt=self.html_text[start_pos:end_pos].replace("\ufeff","")
+            json_txt=re.sub('/\*-[end]*-\*/','',json_txt)
             try:
-                t_json=json.loads(self.html_text[start_pos:end_pos].replace("\ufeff",""))
+                t_json=json.loads(json_txt)
             except json.decoder.JSONDecodeError as identifier: # 解析非标准JSON的Javascript字符串，等同于json.loads(JSON str)
-                t_json=eval( self.html_text[start_pos:end_pos].replace("\ufeff","") , type('Dummy', (dict,), dict(__getitem__=lambda s, n: n))())
+                t_json=eval( json_txt , type('Dummy', (dict,), dict(__getitem__=lambda s, n: n))())
                 #t_json=yaml.load(html_text[start_pos:end_pos].replace("\ufeff",""))
+            if len(t_json)==0:
+                raise RuntimeError("数据集<"+p["name"]+">无数据，请检查设置是否正确.通常做法：删除你手工建的数据集，然后直接点击查看数据就可以自动生成。")
             json_props=[x for x in t_json[0]]
             json_props.sort(key=lambda x:str(len(x))+x)
             p['data_is_json']=True

@@ -59,32 +59,34 @@ def errorhandler_500(error):
     resp = make_response(jsonify(traceback_details), 500)
     return resp
 
-if glb.is_test:
+if glb.is_test==False:
     @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
-    def getOneDsDataHtmlTable():
+    @run_async
+    async def getOneDsDataHtmlTable():
         config_data=request.json['config_data']
-        ret=load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
+        ret= await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
         return {
                 "html":ret[:20].to_html(index=False)
                 ,'config_data':config_data
                 }
 
-    def load_one_data(config_data,data_from,param,curr_report_id):
+    async def load_one_data(config_data,data_from,param,curr_report_id):
         glb.redis.sadd("zb:executing",curr_report_id)
         try:
-            ds_dict=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
+            ds_dict= await ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
             #ds_dict=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
             return ds_dict[param['name']] if param is not None and param.get('name','')!='' else ds_dict['修改这里']#list(ret.values())[-1]
         finally:
             glb.redis.srem("zb:executing",curr_report_id)
 
-    @mg.route("/files_template_exec/<int:id>", methods=['GET', 'POST'])
-    def files_template_exec(id):
+    @mg.route("/files_template_exec/<int:id>", methods=['GET', 'POST'])    
+    @run_async
+    async def files_template_exec(id):
         ret_files=[]
         config_data=request.json['config_data']
         glb.redis.sadd("zb:executing",id)
         try:
-            ret_files,tpl_results=ce.files_template_exec(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
+            ret_files,tpl_results=await ce.files_template_exec(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
             return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results})
         finally:
             glb.redis.srem("zb:executing",id)
@@ -94,21 +96,24 @@ else:
     @run_async
     async def getOneDsDataHtmlTable():
         config_data=request.json['config_data']
-        ret=await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
+        ret= await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
+        ret=json.loads(ret)
         return {
-                "html":pd.read_json(ret)[:20].to_html(index=False)
+                "html":pd.DataFrame(ret["data"],columns=ret["columns"])[:20].to_html(index=False)
                 ,'config_data':config_data
                 }
 
     async def load_one_data(config_data,data_from,param,curr_report_id):
         glb.redis.sadd("zb:executing",curr_report_id)
         try:
-            task_result=hnclic.tasks.load_all_data.delay(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
-            while not task_result.ready():
+            async_result= hnclic.tasks.load_all_data.delay(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
+            # _,ds_dict,ret_config_data=await async_result.get()
+            while not async_result.ready():
                 await asyncio.sleep(0.1)
-            if task_result.status=='FAILURE':
-                raise RuntimeError(task_result.traceback.replace('\n','<br>\n'))
-            _,ds_dict,ret_config_data=task_result.result
+            if async_result.status=='FAILURE':
+                raise RuntimeError(async_result.traceback.replace('\n','<br>\n'))            
+            
+            _,ds_dict,ret_config_data= async_result.result
             config_data.update(ret_config_data)            
             return ds_dict[param['name']] if param is not None and param.get('name','')!='' else ds_dict['修改这里']#list(ret.values())[-1]
         finally:
@@ -121,7 +126,7 @@ else:
         config_data=request.json['config_data']
         glb.redis.sadd("zb:executing",id)
         try:
-            task_result=hnclic.tasks.files_template_exec.delay(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
+            task_result= hnclic.tasks.files_template_exec.delay(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
             while not task_result.ready():
                 await asyncio.sleep(0.1)
             if task_result.status=='FAILURE':
@@ -444,3 +449,53 @@ def h5(name):
             s=f.read()
             f.close()
         return s
+
+@app.route("/api/raw/<int:id>/<rawtype>/<ds_names>")
+@run_async
+async def raw_get(id,rawtype,ds_names):
+    glb.redis.hincrby("zb:tj",'api')
+    ds_names=ds_names.split(',')
+    cur=None
+    with glb.db_connect() as conn:
+        with conn.cursor(as_dict=True) as cursor:
+            cursor.execute('SELECT * FROM zhanbao_tbl WHERE id=%s', id)
+            config_data= json.loads(cursor.fetchone()['config_txt'])
+    #for one_data_from in json.loads(cur_row['config_txt'])['data_from'] for one on one_data_from['ds'] is one['name'] in ds_names
+    user_input_form_data={**request.args,**request.form}
+    # ds_dict= ce.load_all_data(config_data,id,args=args,upload_path=glb.user_report_upload_path(id),userid=glb.ini['user_login']['test_user'])
+
+    async_result= hnclic.tasks.load_all_data.delay(config_data,id,
+                                    user_input_form_data=user_input_form_data,
+                                    upload_path=glb.user_report_upload_path(id),
+                                    userid=glb.ini['user_login']['test_user'])
+    # _,ds_dict,ret_config_data=await async_result.get()
+    while not async_result.ready():
+        await asyncio.sleep(0.1)
+    if async_result.status=='FAILURE':
+        raise RuntimeError(async_result.traceback.replace('\n','<br>\n'))            
+    
+    _,ds_dict,ret_config_data= async_result.result
+
+    ret_dict=dict({key:value for key,value in ds_dict.items() if key in ds_names})
+    rawtype=rawtype.split(":")
+    ret_str='{"errcode":0,"message":"success",'
+    if rawtype[0]=='json':
+        '''json的格式如下
+        split ，样式为 {index -> [index], columns -> [columns], data -> [values]}
+        records ，样式为[{column -> value}, … , {column -> value}]
+        index ，样式为 {index -> {column -> value}}
+        columns ，样式为 {index -> {column -> value}}
+        values ，数组样式
+        table ，样式为{‘schema': {schema}, ‘data': {data}}，和records类似
+        '''
+        json_type='records'
+        if len(rawtype)==2 :
+            if rawtype[1] in "split,records,index,columns,values,table":
+                json_type=rawtype[1]
+            else:
+                return '{"errcode":1,"message":"json选择的类型不正确，应该是下面之一： split,records,index,columns,values,table"}'
+        for key,value in ret_dict.items():
+            ret=json.loads(value)
+            ret_str=ret_str+'\n"' + key+'":' + pd.DataFrame(ret["data"],columns=ret["columns"]).to_json(orient=json_type,force_ascii=False)+','
+    ret_str=ret_str[:-1]+'}'
+    return ret_str        

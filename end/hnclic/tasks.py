@@ -6,10 +6,12 @@ import excel2img
 import comtypes.client
 from hnclic import convert_main as ce,glb
 import pandas as pd
-
+import asyncio
 @zbTaskApp.task
 def files_template_exec(rptid,config_data,userid,upload_path):
-    return ce.files_template_exec(rptid,config_data,userid,upload_path,wx_queue=glb.msg_queue)   
+    return asyncio.run(
+        ce.files_template_exec(rptid,config_data,userid,upload_path,wx_queue=glb.msg_queue)   
+    )
 
 @zbTaskApp.task
 def zb_execute(rptid,config_data=None,userid=None,report_name=""):
@@ -23,20 +25,23 @@ def zb_execute(rptid,config_data=None,userid=None,report_name=""):
                 ret=cursor.fetchone()
     if ret is None:
         return "没有这个ID:"+rptid    
-    return glb.zb_execute(rptid,json.loads(ret['config_txt']),ret['worker_no'],ret['report_name'])
+    return  glb.zb_execute(rptid,json.loads(ret['config_txt']),ret['worker_no'],ret['report_name'])
+    
 
 @zbTaskApp.task
 def send_message():
     glb.msg_queue.sendMessage()
 
 @zbTaskApp.task
-def load_all_data(config_data,id,args=None,upload_path=None,userid=None):
-    ds_dict=ce.load_all_data(config_data,id=id,args=args,upload_path=upload_path,userid=userid)
+def load_all_data(config_data,id,user_input_form_data=None,upload_path=None,userid=None):
+    ds_dict=asyncio.run(
+            ce.load_all_data(config_data,id=id,user_input_form_data=user_input_form_data,upload_path=upload_path,userid=userid)
+                    )
     df_arr=[]
     ret={}
     for k,v in ds_dict.items():
         if isinstance(v,pd.DataFrame):
-            ret[k]=v.to_json(orient='records',force_ascii=False)#
+            ret[k]=v.to_json(orient='split',force_ascii=False) #
             df_arr.append(k)
         elif k[:2]!='__':
             ret[k]=v
