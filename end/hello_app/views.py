@@ -9,7 +9,7 @@ from werkzeug.utils import secure_filename
 import pymssql
 from data_adapter.DataInterface import DataInterface
 import hnclic.tasks
-
+import pandas as pd
 from functools import wraps
 from concurrent.futures import Future, ThreadPoolExecutor
 
@@ -59,15 +59,32 @@ def errorhandler_500(error):
     resp = make_response(jsonify(traceback_details), 500)
     return resp
 
+@mg.route("/initDatafrom/", methods=['GET', 'POST'])
+@run_async
+async def initDatafrom():
+    data_from=request.json['data_from']        
+    if data_from['type']=="file":
+        upload_path=glb.user_report_upload_path(request.json['curr_report_id']  )
+        filename=os.path.join(upload_path, data_from['url'])
+        ret=ce.load_from_file(filename,[])
+        data_from={**data_from,**ret['修改这里']['data_from']}
+    else:
+        ret= await ce.load_from_url2(data_from,{},0,session['userid'])
+    return {
+            'data_from':data_from
+            ,"ds_dict":{k:v['data'] for (k,v) in ret.items()}
+            ,'df_arr':[ x for x in ret ]
+            }
 if glb.is_test:
     @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
     @run_async
     async def getOneDsDataHtmlTable():
         config_data=request.json['config_data']
-        ret= await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
+        df_arr,ds_dict= await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])        
         return {
-                "html":ret[:20].to_html(index=False)
-                ,'config_data':config_data
+                'config_data':config_data
+                ,"ds_dict":ds_dict
+                ,'df_arr':df_arr
                 }
 
     async def load_one_data(config_data,data_from,param,curr_report_id):
@@ -75,7 +92,15 @@ if glb.is_test:
         try:
             ds_dict= await ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
             #ds_dict=ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
-            return ds_dict[param['name']] if param is not None and param.get('name','')!='' else ds_dict['修改这里']#list(ret.values())[-1]
+            df_arr=[]
+            ret={}
+            for k,v in ds_dict.items():
+                if isinstance(v,pd.DataFrame):
+                    ret[k]=v.to_json(orient='split',force_ascii=False) #
+                    df_arr.append(k)
+                elif k[:2]!='__':
+                    ret[k]=v
+            return df_arr,ret
         finally:
             glb.redis.srem("zb:executing",curr_report_id)
 
@@ -91,16 +116,15 @@ if glb.is_test:
         finally:
             glb.redis.srem("zb:executing",id)
 else:
-    import pandas as pd
     @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
     @run_async
     async def getOneDsDataHtmlTable():
         config_data=request.json['config_data']
-        ret= await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])
-        ret=json.loads(ret)
+        df_arr,ds_dict= await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])        
         return {
-                "html":pd.DataFrame(ret["data"],columns=ret["columns"])[:20].to_html(index=False)
-                ,'config_data':config_data
+                'config_data':config_data
+                ,"ds_dict":ds_dict
+                ,'df_arr':df_arr
                 }
 
     async def load_one_data(config_data,data_from,param,curr_report_id):
@@ -113,9 +137,9 @@ else:
             if async_result.status=='FAILURE':
                 raise RuntimeError(async_result.traceback.replace('\n','<br>\n'))            
             
-            _,ds_dict,ret_config_data= async_result.result
+            df_arr,ds_dict,ret_config_data= async_result.result
             config_data.update(ret_config_data)            
-            return ds_dict[param['name']] if param is not None and param.get('name','')!='' else ds_dict['修改这里']#list(ret.values())[-1]
+            return df_arr,ds_dict
         finally:
             glb.redis.srem("zb:executing",curr_report_id)
 

@@ -302,8 +302,19 @@ def release_lock(conn,lock_name, identifier):
 '''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
 import base64
 from Crypto.Cipher import AES
- 
- 
+from Crypto.PublicKey import RSA
+
+# 公钥加密
+def rsa_encode(message, public_key):
+    rsakey = RSA.importKey(public_key)  # 导入读取到的公钥
+    cipher = PKCS1_v1_5.new(rsakey)  # 生成对象
+    # 通过生成的对象加密message明文，注意，在python3中加密的数据必须是bytes类型的数据，不能是str类型的数据
+    cipher_text = base64.b64encode(
+        cipher.encrypt(message.encode(encoding="utf-8")))
+    # 公钥每次加密的结果不一样跟对数据的padding（填充）有关
+    return cipher_text.decode()
+    
+
 #  bytes不是32的倍数那就补足为32的倍数
 def __add_to_32(value):
     while len(value) % 32 != 0:

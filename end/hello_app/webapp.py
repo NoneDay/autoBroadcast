@@ -3,12 +3,12 @@ import flask,os,sys
 sys.path.append(os.path.realpath(os.curdir))
 from hello_app import app
 import _mssql,pymssql    
-from datetime import datetime
+import datetime
 import json,requests
 from hnclic import convert_main as ce,glb
 import views,tianbao,user
 import decimal
-
+import numpy as np
 
 class DecimalDateEncoder(json.JSONEncoder):  
     def default(self, obj):  
@@ -16,9 +16,27 @@ class DecimalDateEncoder(json.JSONEncoder):
             return round(float(obj),2)
         elif isinstance(obj, datetime.datetime):  
             return obj.strftime('%Y-%m-%d %H:%M:%S')  
-        elif isinstance(obj, date):  
+        elif isinstance(obj, datetime.date):  
             return obj.strftime("%Y-%m-%d")  
-        else:  
+        elif isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+            return int(obj)
+
+        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+
+        elif isinstance(obj, (np.complex_, np.complex64, np.complex128)):
+            return {'real': obj.real, 'imag': obj.imag}
+
+        elif isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+
+        elif isinstance(obj, (np.bool_)):
+            return bool(obj)
+
+        elif isinstance(obj, (np.void)): 
+            return None
             return json.JSONEncoder.default(self, obj) 
 
 

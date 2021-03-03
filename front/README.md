@@ -14,6 +14,8 @@
 
 # 安装依赖
 
+https://digi.bib.uni-mannheim.de/tesseract/ 
+
 # 启动服务
 npm run serve
 

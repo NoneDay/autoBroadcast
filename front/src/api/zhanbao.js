@@ -33,6 +33,24 @@ export function query_data(data) {
     }
   })
 }
+export function initDatafrom(data) {
+  return request({
+    url: `/mg/initDatafrom/`,
+    method: 'post',
+    data,
+    loading: {
+      type: 'loading',
+      options: {
+        fullscreen: true,
+        lock: true,
+        text: '正在查询...',
+        spinner: 'el-icon-loading',
+        background: 'rgba(0, 0, 0, 0.8)'
+      }
+    }
+  })
+}
+
 export function files_template_exec(id, data) {
   return request({
     url: `/mg/files_template_exec/${id}`,

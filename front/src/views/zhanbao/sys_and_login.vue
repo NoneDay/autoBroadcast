@@ -253,6 +253,7 @@ export default {
       },
       prop: 'headers'
     },
+
     {
       type: 'dynamic',
       label: '查询报表:header',
@@ -283,6 +284,7 @@ export default {
       },
       prop: 'next_headers'
     },
+    
     {
       type: 'dynamic',
       label: '查询报表:cookies',

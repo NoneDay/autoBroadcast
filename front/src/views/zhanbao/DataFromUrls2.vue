@@ -34,11 +34,12 @@
 
 <script>
 import formDialog from './formDialog'
+import * as service from '@/api/zhanbao'
 export default {
   components: { formDialog },
-  props: {
-    dataFrom: Array, newUrlFormInput: Array
-  },
+  props: [
+    'dataFrom', 'newUrlFormInput','curr_report_id'
+  ],
   watch:{
       dataFrom(new_v,old_v){
         this.$nextTick(()=>{
@@ -63,8 +64,7 @@ export default {
       data: [],
       url_data:null,
       has_select:false,
-      form_input_visible: false,
-      
+      form_input_visible: false,      
       files_template_exec_result: {},
       files_template_exec_result_visilbe: false,
       option:{
@@ -73,11 +73,11 @@ export default {
             {label: "网址",prop: "url" ,span:24,
               rules: [{required: true,message: "请输入网址",trigger: "blur"}]
             },
-            {label: "类型",prop: "type" ,type:'select',
+            {label: "类型",prop: "type" ,type:'select',      value: 'html',
               dicData:[
                     {value:'html', label:'html'},
-                    {value:'json', label:'json'},
-                    {value:'file', label:'csv文件'},
+                    //{value:'json', label:'json'},
+                    {value:'file', label:'数据文件'},
                     {value:'sql', label:'sql加工'}
               ],
               rules: [{required: true,message: "请选择类型",trigger: "blur"}]
@@ -109,8 +109,10 @@ export default {
         this.has_select= row!=null
         this.$emit('select_change', row)
     },    
-    rowSave(form,done,loading){
-        if(['html','json'].includes(form.type)){
+    async rowSave(form,done,loading){
+        loading()
+        
+        if(['html','json'].includes(form.type) && !form['url'].startsWith("结果")){
           let match_arr=[]
           this.$store.getters.canReadSys.forEach(one_sys=>{
             one_sys.patterns.forEach(one_pat=>{
@@ -119,14 +121,30 @@ export default {
             })
           })
           if (match_arr.length==0){
-            this.$message.error('这个网址没有可匹配的系统，如果确实没输入错误，请联系管理员添加对该系统的支持')
-            loading()
-            return 
+            
+            if(form.url.endsWith(".csv") || form.url.endsWith(".xlsx"))
+            {
+                form.type="file"
+            }
+            else{
+              this.$message.error('这个网址没有可匹配的系统，如果确实没输入错误，请联系管理员添加对该系统的支持')
+              return 
+            }
+          }else{
+            match_arr.sort(function(a,b){return b[1].length-a[1].length})
+            form.type=match_arr[0][0]
           }
-          match_arr.sort(function(a,b){return b[1].length-a[1].length})
-          form.type=match_arr[0][0]
         }        
-        this.dataFrom.push(Object.assign({ 'type': 'html', 'form_input': [], 'ds': [] },form))
+        let new_data_from=Object.assign({ 'type': 'html', 'form_input': [], 'ds': [] },form)
+        let old_this = this
+        if(new_data_from['type']=="sql"){
+          new_data_from.ds={"type":"sqlLite","name":"修改名字"}
+        }
+        else if (!new_data_from['url'].startsWith("结果")){
+          const res_data = await service.initDatafrom({ data_from: new_data_from,curr_report_id:old_this.curr_report_id })
+          new_data_from=res_data.data_from
+        }
+        this.dataFrom.push(new_data_from)
         done(); 
       },
     refresh(val){

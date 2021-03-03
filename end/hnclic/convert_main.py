@@ -23,7 +23,6 @@ import yaml
 from handle_file import convert_file_for_xlsx,convert_file_for_txt,convert_file_for_pptx,convert_html
 from utils import get_jinja2_Environment,is_number,guess_col_names,exec_template
 import data_adapter
-import colorama 
 import glb
 
 '''
@@ -281,7 +280,7 @@ async def load_all_data(config_data,id,appendFunDict=None,upload_path=None,useri
             ret={**ret,**t}  
         if isinstance(t,Exception):
             raise t
-    print(colorama.Fore.RED+  f"全部取数结束，用时： {time.time()-start_time}")
+    print( f"全部取数结束，用时： {time.time()-start_time}")
     #用已定义的全局参数，覆盖所有子取数的参数合集
     form_input={}
     for one in config_data['data_from']:

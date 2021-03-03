@@ -37,6 +37,7 @@
     <el-row>
       <el-col :span="22"><div >
         <dataFromUrls :dataFrom.sync="data.config_data.data_from" @select_change="dataFromUrls_select_change" 
+        :curr_report_id="data.curr_report_id"
         @reload_define="reload_define"
         />
       </div>
@@ -81,6 +82,7 @@
         <el-button  type="primary" @click="save_config">保存</el-button>
         <el-button  type="success" @click="open_template_output">模板输出动作设置</el-button>
         <el-button  type="primary" @click="files_template_exec">按模板生成</el-button>        
+        <el-button  type="primary" @click="workflow_visable=true">工作流</el-button>        
 
       </el-row>
       
@@ -128,7 +130,7 @@
       </el-row>      
     </el-col>
     </el-row>
-
+    
     <varDetailDialog :visible.sync="data.varDetailDialog_visible" v-if="data.varDetailDialog_visible" :all_ds="all_ds" :target_obj="data.new_form_input"
           @submit="varDetailDialog_submit" 
         ></varDetailDialog>
@@ -136,9 +138,29 @@
     :all_vars="data.config_data.vars" :all_ds="all_ds"
           @submit="tplDialog_submit" 
     ></tinymceDialog>
-
+    <el-dialog :visible.sync="workflow_visable" v-if="workflow_visable" :fullscreen="true" title="工作流" :close-on-click-modal="false" append-to-body>
+      <landingPage :config_data="data.config_data" :fileList="data.fileList" />
+    </el-dialog>
     <el-dialog :visible.sync="data.result_visible" title="结果" :close-on-click-modal="false" append-to-body>
-      <div v-html="data.result" />
+      
+      <div v-for="key in data.ds_data.df_arr" :key="key" style="display:inline-block;padding-right:20px">
+        <el-tag :style="{'border':key==cur_ds?'2px darkred solid':''}"
+         @click="cur_ds=key" effect="dark">{{key}}</el-tag>
+      </div>
+      <div v-if="tableData.length==0" >无数据</div>
+      <el-table stripe border  :height="250" v-if="tableData.length>0" 
+                :data="tableData.slice((currentPage - 1) * pageSize, currentPage*pageSize)"  
+                style="width: calc(100% -1px)">
+                <el-table-column v-for="(one,idx) in Object.keys(tableData[0])"
+                sortable :key="one+idx" :prop="one" :label="one"> </el-table-column>
+            </el-table>           
+            <el-pagination  v-if="tableData.length>0"
+                :current-page.sync="currentPage"
+                :page-sizes="[2, 5, 10, 20]"
+                :page-size.sync="pageSize"
+                layout="total, sizes, prev, pager, next, jumper"
+                :total.sync="tableData.length">
+            </el-pagination>
     </el-dialog>
 
     <formDialog :title="data.form_input_title" :visible.sync="data.form_input_visible" 
@@ -196,11 +218,12 @@ import formDialog from './formDialog'
 import * as service from '@/api/zhanbao'
 import CronInput from 'vue-cron-generator/src/components/cron-input'
 import { baseUrl } from '@/config/env';
-
+import {convert_array_to_json} from "@/views/rpt_design/utils/util"
+import landingPage from "./workflow/plane"
 const datas={}
 export default {
   name: 'Zhanbao',
-  components: { dataFromUrls, dataDetail, template_output_dialog, formDialog,varDetailDialog,tinymceDialog,CronInput},
+  components: { dataFromUrls, dataDetail, landingPage,template_output_dialog, formDialog,varDetailDialog,tinymceDialog,CronInput},
   computed:{
     all_image(){
       let rets=[]
@@ -209,6 +232,12 @@ export default {
         rets.push(baseUrl+'/mg/image_file/'+ this.data.curr_report_id+'/'+one_png )
       })
       return rets
+    },
+    tableData(){      
+      if(this.data.ds_data.ds_dict && this.data.ds_data.ds_dict[this.cur_ds]){
+        return this.data.ds_data.ds_dict[this.cur_ds]
+      }
+      return []
     },
     all_ds(){
       let ret_arr=[]
@@ -227,7 +256,10 @@ export default {
   data() {
     return {
       datas: datas,
-      
+      cur_ds:"",
+      currentPage:1,
+      pageSize:20,
+      workflow_visable:false,
       data: this.getDefaultData()
     }
   },
@@ -235,6 +267,9 @@ export default {
     
   },
   methods: {
+    workflow_exec(){
+
+    },
     create_ds_template_statement(command,ds_name){
       let text
       if(command===null){
@@ -346,7 +381,19 @@ export default {
       )
       this.data.result_visible = true
       this.data.result = res_data.html
-      
+      if(res_data.ds_dict){
+        res_data.df_arr.forEach(one_df=>{
+          this.cur_ds=one_df
+          let one=JSON.parse( res_data.ds_dict[one_df] )
+          res_data.ds_dict[one_df]=convert_array_to_json(one.data,0,-1,one.columns)
+        })
+      }
+      this.data.ds_data=res_data
+      if (detail_data && detail_data['name']){
+        this.cur_ds=detail_data['name']
+      }else{
+        
+      }
       //this.data.config_data=res_data.config_data
       res_data.config_data.data_from.forEach( (df,df_index)=>{
         this.data.config_data.data_from[df_index].form_input=df.form_input
@@ -575,7 +622,7 @@ export default {
         cron_str: '0 30 7,18 * * * *',
         fileList: [],
         template_output: [],
-
+        ds_data:{},
         tmp_detail_data: null,
         
 
@@ -638,6 +685,9 @@ export default {
 }
 </script>
 <style >
+.inputDialog{
+      width:1000px
+  }
 .avue-crud .el-table--small td, .avue-form .el-table--small td {
     padding: 1px 0!important;
 }
