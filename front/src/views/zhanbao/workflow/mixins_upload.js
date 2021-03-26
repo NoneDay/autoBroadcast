@@ -6,9 +6,6 @@ export default {
       }
     },
     computed:{
-        curr_report_id(){
-            return this.config_data.curr_report_id
-        }
     },
     methods:{
         // ----------------------------------------
@@ -31,27 +28,27 @@ export default {
             else
             this.$message.error(ret.message)
         },
-        async file_handleRemove(file) {
-            let ret=await service.file_remove(this.curr_report_id,file.name)
-            let idx=this.fileList.indexOf(file)
-            if(idx>=0)
-            this.fileList.splice(idx,1);
-            
-            let tmp=this.config_data.template_output_act
-            let one=tmp.find(x=>x.file==file.name)
-            if(one && tmp.indexOf(one)>=0)
-            tmp.splice(tmp.indexOf(one),1);
-
+        async file_handleRemove(node) {
+            let ret=await service.file_remove(this.curr_report_id,node.file)
             if(ret.errcode==0)
-            this.$message.success(ret.message)
-            else
-            this.$message.error(ret.message)
+                this.$message.success(ret.message)
+            else{
+                this.$message.error(ret.message)
+                return
+            }
+            let idx=this.fileList.indexOf(this.fileList.find(x=>x.name==node.file))
+            if(idx>=0)
+                this.fileList.splice(idx,1);
+            let tmp=this.config_data.template_output_act
+            tmp.splice(tmp.indexOf(node),1);
+            this.fresh_plumb()
         },
         file_success(response, file, fileList) {
             let tmp=this.config_data.template_output_act
             let one=tmp.find(x=>x.file==file.name)
             if(!one)
-            tmp.push({file:file.name,'canOutput':"false",'wx_file':'','wx_msg':''})
+                tmp.push({file:file.name,'canOutput':"false",'wx_file':'','wx_msg':''})
+            this.fresh_plumb()
         },
         file_error(error, file, fileList) {
             console.log(file, fileList)

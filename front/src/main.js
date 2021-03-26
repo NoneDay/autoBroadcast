@@ -18,7 +18,8 @@ import i18n from './lang' // Internationalization
 import './styles/common.scss';
 import basicBlock from './components/basic-block/main'
 import basicContainer from './components/basic-container/main'
-
+import Contextmenu from "vue-contextmenujs"
+Vue.use(Contextmenu);
 Vue.use(router)
 Vue.use(VueAxios, axios)
 Vue.use(ElementUI, {size: 'small',

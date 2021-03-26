@@ -1,13 +1,26 @@
+let props={
+    anchor: ['Left', 'Right', 'Top', 'Bottom', [0.3, 0, 0, -1], [0.7, 0, 0, -1], [0.3, 1, 0, 1], [0.7, 1, 0, 1]],
+    connector: ['StateMachine', {margin: 0, curviness: 10, proximityLimit: 80}],
+    endpoint: ['Blank', {Overlays: ''}],
+    overlays: [ ['Arrow', { width: 8, length: 8, location: 1}] 
+    ], // overlay
+    // 添加样式
+    //paintStyle: { stroke: '#909399', strokeWidth: 2 ,outlineWidth: 10}, // connector
+    //hoverPaintStyle: {stroke:"black", strokeWidth: 3},
+    // endpointStyle: { fill: '#909399',  outlineWidth: 1 } // endpoint
+    //scope: 'jsPlumb_DefaultScope' 
+    }
 let jsplumbSetting= {
+    Anchor: ['Left', 'Right', 'Top', 'Bottom', [0.3, 0, 0, -1], [0.7, 0, 0, -1], [0.3, 1, 0, 1], [0.7, 1, 0, 1]],
     // 动态锚点、位置自适应
-    Anchors: ['Top', 'TopCenter', 'TopRight', 'TopLeft', 'Right', 'RightMiddle', 'Bottom', 'BottomCenter', 'BottomRight', 'BottomLeft', 'Left', 'LeftMiddle'],
+    Anchors: ['Left', 'Right', 'Top', 'Bottom', [0.3, 0, 0, -1], [0.7, 0, 0, -1], [0.3, 1, 0, 1], [0.7, 1, 0, 1]],
     // 容器ID
     Container: 'efContainer',
     // 连线的样式，直线或者曲线等，可选值:  StateMachine、Flowchart，Bezier、Straight
-    Connector: ['Bezier', {curviness: 100}],
+    //Connector: ['Bezier', {curviness: 100}],
     // Connector: ['Straight', {stub: 20, gap: 1}],
     // Connector: ['Flowchart', {stub: 30, gap: 1, alwaysRespectStubs: false, midpoint: 0.5, cornerRadius: 10}],
-    // Connector: ['StateMachine', {margin: 5, curviness: 10, proximityLimit: 80}],
+    Connector: ['StateMachine', {margin: 0, curviness: 10, proximityLimit: 80}],
     // 鼠标不能拖动删除线
     ConnectionsDetachable: false,
     // 删除线的时候节点不删除
@@ -45,7 +58,7 @@ let jsplumbSetting= {
      */
     PaintStyle: {
         // 线的颜色
-        stroke: 'red',
+        stroke: '#909399',
         // 线的粗细，值越大线越粗
         strokeWidth: 1,
         // 设置外边线的颜色，默认设置透明，这样别人就看不见了，点击线的时候可以不用精确点击，参考 https://blog.csdn.net/roymno2/article/details/72717101
@@ -82,19 +95,63 @@ let jsplumbSetting= {
     // 绘制图的模式 svg、canvas
     RenderMode: 'svg',
     // 鼠标滑过线的样式
-    HoverPaintStyle: {stroke: '#b0b2b5', strokeWidth: 1},
+    HoverPaintStyle: {stroke: '#909399', strokeWidth: 4},
     // 滑过锚点效果
     // EndpointHoverStyle: {fill: 'red'}
     Scope: 'jsPlumb_DefaultScope' // 范围，具有相同scope的点才可连接
 }
 import * as service from '@/api/zhanbao'
+import { baseUrl } from '@/config/env';
+import {convert_array_to_json} from "@/views/rpt_design/utils/util"
 export default {
     data() {
-      return {
-      }
+        return {
+              in_menu:false,
+              page: {
+                pageSize: 20,
+                pagerCount:5,
+                currentPage:1,
+                total:0,
+              },
+        }
     },
-    
+    watch:{
+        
+    },
     computed:{
+        all_image(){
+            let rets=[]
+            this.files_template_exec_result?.all_files?.filter(x=> x.endsWith('.png')|| x.endsWith('.JPG') ).forEach(one_png=>
+            {
+                rets.push(baseUrl+'/mg/image_file/'+ this.curr_report_id+'/'+one_png )
+            })
+            return rets
+        },
+        tableData_option(){      
+            let ret_columns=[]
+            if(this.ds_data.ds_dict && this.ds_data.ds_dict[this.cur_ds]){
+                this.ds_data.ds_dict[this.cur_ds].columns.forEach(x=>{
+                    ret_columns.push({label:x,prop:x})
+                })
+                ret_columns[0].fixed=true
+                return {
+                    title:this.cur_ds,
+                    refreshBtn:false,saveBtn:false,updateBtn:false,menu:false,
+                    cancelBtn:false,addBtn:false,delBtn:false,editBtn:false,
+                    column:ret_columns
+                }
+            }
+            return []
+            },
+        tableData(){      
+            if(this.ds_data.ds_dict && this.ds_data.ds_dict[this.cur_ds]){
+                let ret=this.ds_data.ds_dict[this.cur_ds].data
+                this.page.total=ret.length
+                this.page.currentPage=1
+                return ret
+            }
+            return []
+            },
         all_ds(){
             let ret_arr=[]
             if(this.config_data.data_from)
@@ -120,17 +177,25 @@ export default {
             this.tmp_obj=tag
             this.varDetailDialog_visible=true
         },
-        varDetailDialog_submit(obj){            
+        varDetailDialog_submit(form){            
             if(this.config_data.vars===undefined)
-                this.config_data.vars=[this.deepClone(obj.newVal)]
+                this.config_data.vars=[this.deepClone(form.newVal)]
             else{
+                let {obj,obj_type,parent}=this.getByName(form.name)
+                
                 const vars=this.config_data.vars
-                if(obj.old_Val.name){
-                let idx=this.findArray(vars,obj.old_Val.name,'name');
-                if(idx>=0)
-                    vars.splice(idx, 1,obj.newVal);
-                }else
-                vars.push(obj.newVal)
+                if(form.old_Val.name){
+                let idx=this.findArray(vars,form.old_Val.name,'name');
+                if(idx>=0){
+                    if( obj && this.activeElement.node!=obj){
+                        this.$message({message: '名字重复',type: 'warning'});
+                        return
+                    }
+                    vars.splice(idx, 1,form.newVal);
+                }
+                }else{
+                    vars.push(form.newVal)
+                }
             }
         },
         varDetailDialog_show(var_type){
@@ -140,12 +205,22 @@ export default {
 
 
         addUrlFrom(type){
+            if(type=="sql"){
+                let data_from={'form_input': [], 'ds':[{"type":"json","name":"修改名字"}],'type':'sql','url':"" }
+                while(this.getByName(data_from.ds[0].name).obj){
+                    data_from.ds[0].name="修改"+Math.ceil(Math.random() * 999)
+                }
+                this.config_data.data_from.push(data_from)
+                this.config_data.ds_queue.push(data_from.ds[0].name) 
+                this.fresh_plumb()
+                return
+            }
             this.$prompt('请输入', type, {confirmButtonText: '确定',cancelButtonText: '取消',customClass:"inputDialog"})
                 .then(async ({value}) => {
                     if(value.startsWith("view-source:")){
                         value=value.substring("view-source:".length)
                     }
-                    let data_from={ 'type': 'html', 'form_input': [], 'ds': [],'type':type,'url':value }
+                    let data_from={'form_input': [], 'ds': [],'type':type,'url':value }
                     if(['html','json'].includes(type) && !data_from['url'].startsWith("结果")){
                         let match_arr=[]
                         this.$store.getters.canReadSys.forEach(one_sys=>{
@@ -168,23 +243,15 @@ export default {
                           match_arr.sort(function(a,b){return b[1].length-a[1].length})
                           data_from.type=match_arr[0][0]
                         }
-                      }                              
-                      let old_this = this
-                      if(data_from['type']=="sql"){
-                        data_from.ds={"type":"sqlLite","name":"修改名字"}
-                      }
-                      else if (!data_from['url'].startsWith("结果")){
+                    }                              
+                    let old_this = this
+                    if (!data_from['url'].startsWith("结果")){
                         const res_data = await service.initDatafrom({ data_from: data_from,curr_report_id:old_this.curr_report_id })
                         data_from=res_data.data_from
-                      }
-                      old_this.config_data.data_from.push(data_from)
-                      data_from.ds.forEach(ds=>{
-                        while(old_this.config_data.ds_queue.find(x=>x==ds.name)){
-                            ds.name="修改"+Math.ceil(Math.random() * 999)
-                        }
-                        old_this.config_data.ds_queue.push(ds.name)
-                      })
-                }).catch(error=>console.info(error));
+                        this.show_result(res_data)
+                    }
+                    old_this.fresh_plumb()
+                }).catch(error=>this.$message(error,type="error"));                
         },
         url_submit(form,done){
             Object.assign(this.activeElement.node, form)
@@ -192,7 +259,7 @@ export default {
             this.url_visible=false
         },
         url_option(){
-            return {
+            let ret= {
                 column: [
                     {label: "网址",prop: "url" ,span:24,rules: [{required: true,message: "请输入网址",trigger: "blur"}]
                     },
@@ -205,7 +272,9 @@ export default {
                     rules: [{required: true,message: "请选择类型",trigger: "blur"}]
                     },
                 {label: "描述",prop: "desc"},
-
+                ]}
+            if(!['sql','file'].includes(this.activeElement.node.type))
+            ret.column.push(
                 {
                     type: 'dynamic',
                     label: '参数设置',
@@ -227,21 +296,62 @@ export default {
                         ] 
                     }
                 }
-
-                ]
-            }
+            )
+            return ret
+        },
+        getByName(name){
+            let ret=this.config_data.vars.find(x=>x.name==name)
+            if(ret)
+                return {obj:ret,obj_type:'变量',parent:this.config_data.vars}
+            let ret_df
+            let ret_ds
+            ret=this.config_data.data_from.every(data_from=>{
+                ret_df=data_from.ds
+                return ret_df.every(ds=>{
+                    ret_ds=ds
+                    return ds.name!=name
+                })
+            })
+            if(!ret)
+                return {obj:ret_ds,obj_type:'数据集',parent:ret_df}
+            return {}
         },
         urlData_ds_submit(form,done){
+            let {obj,obj_type,parent}=this.getByName(form.name)
+            if(obj && this.activeElement.node!=obj){
+                this.$message({message: '名字重复',type: 'warning'});
+                return
+            }
             if(this.activeElement.node.backup!=form.backup){
-                this.$nextTick(function () {
-                    if(form.backup){
-                        this.plumbIns.makeSource("上次:"+form.name)
-                        this.plumbIns.makeSource("昨日:"+form.name)
-                    }else{
 
+            }
+            if(this.activeElement.node.name!=form.name){//替换ds_queue和ds_depend中的名字
+                let old_name=this.activeElement.node.name
+                let idx=this.config_data.ds_queue.indexOf(old_name)
+                this.config_data.ds_queue[idx]=form.name
+                this.config_data.ds_depend.forEach(one=>{
+                    one.master=one.master.replace(":"+old_name,":"+form.name )
+                    one.depend=one.depend.replace(":"+old_name,":"+form.name )
+                })
+                this.config_data.vars.forEach(one=>{
+                    if(one.ds==old_name){
+                        one.ds=form.name
+                        one.last_statement.replaceAll(old_name+ "[", form.name+"[")
                     }
-                    this.plumbIns.setSuspendDrawing(false, true);
-                })               
+                })
+                this.config_data.data_from.forEach(data_from=>{
+                    data_from.ds.forEach(ds=>{
+                        ds.append?.forEach(one=>{
+                            let arr=one.from.split(":")
+                            if(arr.length==1 && arr[0]==old_name)
+                                one.from=form.name
+                            else if(arr.length==2 && arr[1]==old_name)
+                                one.from=arr[0]+":"+form.name
+                        })
+                    })
+                })
+                let _this=this
+                this.fresh_plumb()
             }
             Object.assign(this.activeElement.node, form)
             done()
@@ -250,7 +360,7 @@ export default {
         urlData_ds_option()
         {
             let columns_name=[]
-            this.activeElement.node.old_columns.forEach(col=>{
+            this.activeElement.node?.old_columns?.forEach(col=>{
                 columns_name.push({label:col,value:col})
             })
             return {
@@ -281,8 +391,8 @@ export default {
                 { prop: 'sort', label: '排序列'},
                 { prop: 'columns', label: '列名',hide:true,editDisplay:false,addDisplay:false},
                 { prop: 'backup', label: '备份'},
-                { prop: 'view_columns',span:24, type:'checkbox',label: '选择显示的列',dicData:columns_name},          
-                { prop: 'key_column',span:24, type:'radio',label: '选择显示的列',dicData:columns_name},   
+                { prop: 'view_columns',span:24, type:'checkbox',label: '选择显示列',dicData:columns_name},          
+                { prop: 'key_column',span:24, type:'radio',label: '选择关键字',dicData:columns_name},   
                 ]
             }
         },
@@ -295,7 +405,7 @@ export default {
             if(from.split(":")[0]=='最终')
                 tmp_ds_depend.push({master: to, depend : from })
             this.all_ds.forEach(ds=>{tmp_ds_names.push(ds.name)})
-            
+            tmp_ds_depend=tmp_ds_depend.filter(x=>x.master.split(":")[0]!='来自' && x.master.split(":")[1] !=x.depend.split(":")[0] )
             let hasAdd=false
             while(tmp_ds_names.length>0){
                 hasAdd=false
@@ -336,9 +446,9 @@ export default {
                 }
                 return ""
             }
-            if(['昨日','上次'].includes(from.split(":")[0]) && from.split(":")[1]!=to.split(":")[1]){
-                return "['昨日','上次']只能合并到自身。合并到其他数据集现在不支持"
-            }
+            //if(['昨日','上次'].includes(from.split(":")[0]) && from.split(":")[1]!=to.split(":")[1]){
+            //    return "['昨日','上次']只能合并到自身。合并到其他数据集现在不支持"
+            //}
              //不同数据集之间的连接
             for (let i = 0; i < this.lineList.length; i++) {
                 let line = this.lineList[i]
@@ -353,57 +463,71 @@ export default {
                 }
             }
             return ""
+        },        
+        fresh_plumb(){
+            this.plumbIns.deleteEveryConnection()
+            this.plumbIns.deleteEveryEndpoint()
+            this.plumbIns.unmakeEveryTarget()
+            this.plumbIns.unmakeEverySource()
+            let _this=this
+            this.$nextTick(() => {
+                if(_this.curr_report_id!=-1)
+                    _this.reload_line()
+            });
         },
-        
         reload_line(){
+
+            
             let plumbIns=this.plumbIns
             this.loadFinish=false
             this.lineList=[]
             
-            let props={
-                anchor: ['Left', 'Right', 'Top', 'Bottom', [0.3, 0, 0, -1], [0.7, 0, 0, -1], [0.3, 1, 0, 1], [0.7, 1, 0, 1]],
-                connector: ['StateMachine'],
-                endpoint: 'Blank',
-                overlays: [ ['Arrow', { width: 8, length: 8, location: 1}] 
-                ], // overlay
-                // 添加样式
-                paintStyle: { stroke: '#909399', strokeWidth: 2 }, // connector
-                // endpointStyle: { fill: '#909399', outlineStroke: '#606266', outlineWidth: 1 } // endpoint
-                
-                }
-                let init_ds_depend=false
-                if(this.config_data.ds_depend==undefined){
-                    this.$set(this.config_data,"ds_depend",[])
-                    init_ds_depend=true
-                }
-                if(this.config_data.ds_queue==undefined){
-                    this.$set(this.config_data,"ds_queue",[])
-                }
-                this.config_data.data_from.forEach((data_from,idx) => {
-                    data_from.ds.forEach(ds => {
-                        if(!this.config_data.ds_queue.find(x=>x==ds.name))
-                            this.config_data.ds_queue.push(ds.name)
-                    })
+ 
+            let init_ds_depend=false
+            if(this.config_data.ds_depend==undefined){
+                this.$set(this.config_data,"ds_depend",[])
+                init_ds_depend=true
+            }
+            if(this.config_data.ds_queue==undefined){
+                this.$set(this.config_data,"ds_queue",[])
+            }
+            this.config_data.data_from.forEach((data_from,idx) => {
+                data_from.ds.forEach(ds => {
+                    if(!this.config_data.ds_queue.find(x=>x==ds.name))
+                        this.config_data.ds_queue.push(ds.name)
                 })
-                this.config_data.ds_queue.forEach(one => {
-                    let data_from,idx,ds
-                    this.config_data.data_from.forEach( (x,i)=>{
-                        if(data_from)
-                            return
-                        ds=x.ds.find(c=>c.name==one)
-                        if(ds){
-                              data_from=x
-                              idx=i
-                        }
-                    })
-                    plumbIns.makeSource("裁剪:"+ds.name)
-                    if(data_from.type!='sql')
+            })
+            this.config_data.template_output_act.filter(x=>x.canOutput=='false' && ['csv','xlsx'].includes( x.file.split('.')[1]))
+            .forEach(one=>{
+                plumbIns.makeSource('文件:'+one.file)
+            })
+            this.config_data.ds_queue.forEach(one => {
+                let data_from,idx,ds
+                this.config_data.data_from.forEach( (x,i)=>{
+                    if(data_from)
+                        return
+                    ds=x.ds.find(c=>c.name==one)
+                    if(ds){
+                            data_from=x
+                            idx=i
+                    }
+                })
+                if(data_from.url.startsWith('结果://')){
+                    this.lineList.push({source: "URL:"+idx,target: "合并:"+ds.name,})
+                    this.lineList.push({source: "合并:"+ds.name,target: "最终:"+ds.name,})
+                }else{
+                    
+                    if(data_from.type!='sql'){
+                        plumbIns.makeSource("裁剪:"+ds.name)
                         plumbIns.makeSource("最终:"+ds.name)
+                    }
                     if(ds.backup){
                         plumbIns.makeSource("上次:"+ds.name)
                         plumbIns.makeSource("昨日:"+ds.name)
                     }
+                    
                     plumbIns.makeTarget("合并:"+ds.name)
+                
                     if( ! ['sql','file'].includes( data_from.type)){
                         this.lineList.push({source: "URL:"+idx,target: "裁剪:"+ds.name,})
                         this.lineList.push({source: "裁剪:"+ds.name,target: "合并:"+ds.name,})
@@ -442,16 +566,61 @@ export default {
                             }
                         }
                     })
-                    if(this.config_data.vars.filter(x=>x.ds==ds.name).length>0)
-                        this.lineList.push({source: "最终:"+ds.name,target: "来自:"+ds.name,})
-                
-                });
+                }
+                if(this.config_data.vars.filter(x=>x.ds==ds.name).length>0)
+                    this.lineList.push({source: "最终:"+ds.name,target: "来自:"+ds.name,})
+            
+            });
+            
                 this.lineList.forEach(element => {
-                    plumbIns.connect({...props,...element})
+                    //anchor: ['Left', 'Right', 'Top', 'Bottom', [0.3, 0, 0, -1], [0.7, 0, 0, -1], [0.3, 1, 0, 1], [0.7, 1, 0, 1]],
+                    if(["上次",'昨日','裁剪'].includes( element.source.split(":")[0]))
+                        plumbIns.connect({...props,...element,...{anchor: ['Left', 'Right',]}})
+                    else
+                        plumbIns.connect({...props,...element})
                 }); 
-                this.loadFinish=true  
-                // 会使整个jsPlumb立即重绘。
-                this.plumbIns.setSuspendDrawing(false, true);
+          
+            
+            this.loadFinish=true  
+            
+            // 会使整个jsPlumb立即重绘。
+            //this.plumbIns.setSuspendDrawing(false, true);
+        },
+        makeConnectionsActive(item) { // 选择某节点其连线高亮显示
+            this.removeConnectionsActive()  // 先删除之前的连线动态效果，再添加
+           
+            let connections = this.plumbIns.getConnections(item)
+            if (connections.length) {
+                connections.forEach((connection, index) => {
+                let sourceId = connection.sourceId,
+                    targetId = connection.targetId,
+                    sourceKey = connection.endpoints[0].anchor.x * 10 + '' + connection.endpoints[0].anchor.y * 10,
+                    targetKey = connection.endpoints[1].anchor.x * 10 + '' + connection.endpoints[1].anchor.y * 10
+                this.plumbIns.connect({ // 添加动态效果即在两节点之间再加一条高亮的线段，故需要获取两个节点id和连线位置
+                    source: sourceId,
+                    target: targetId,
+                    anchors: [connection.endpoints[0].anchor, connection.endpoints[1].anchor],
+                    detachable: false,
+                    scope: 'activeScope',
+                    cssClass: 'point-active-line', // 可设置高亮的效果
+                    connector: ['StateMachine'],
+                    endpoint: 'Blank',
+                    overlays: [ ['Arrow', { width: 8, length: 8, location: 1}] 
+                    ], // overlay
+                    // 添加样式
+                    paintStyle: { stroke: 'black', strokeWidth: 3 ,outlineWidth: 10}, // connector
+                    hoverPaintStyle: {stroke:"black", strokeWidth: 3},
+                })
+            })
+            }
+        },
+        removeConnectionsActive(){
+            let connections = this.plumbIns.getConnections({scope: 'activeScope'})
+            if (connections.length) {
+                connections.forEach((connection) => {
+                    this.plumbIns.deleteConnection(connection,{force:true})
+                })
+            }            
         },
         jsPlumbInit() {
             let _this=this
@@ -464,6 +633,7 @@ export default {
                 _this.activeElement.type = 'line'
                 _this.activeElement.sourceId = conn.sourceId
                 _this.activeElement.targetId = conn.targetId
+                _this.makeConnectionsActive({source:conn.sourceId,target:conn.targetId})
                 //_this.$refs.nodeForm.lineInit({
                 //    from: conn.sourceId,
                 //    to: conn.targetId,
@@ -471,9 +641,11 @@ export default {
                 //})
             })
             // 连线
-            _this.plumbIns.bind("connection", (evt) => {
-                let from = evt.source.id
-                let to = evt.target.id
+            _this.plumbIns.bind("connection", (connect_info,evt) => {
+                if(connect_info.connection.scope=="activeScope")
+                    return
+                let from = connect_info.source.id
+                let to = connect_info.target.id
                 if (_this.loadFinish) 
                 {
                     let ds=_this.all_ds.find(x=>x.name==to.split(":")[1])
@@ -504,7 +676,7 @@ export default {
                     if(from.split(":")[0]=='最终')
                         _this.config_data.ds_depend.push({master: to, depend : from })
                     _this.lineList.push({source: from, target: to,canDelete:true})
-                    
+                    _this.fresh_plumb()
                 }
             }),
             // 删除连线回调
@@ -518,12 +690,15 @@ export default {
             })
 
             // 连线右击
-            _this.plumbIns.bind("contextmenu", (evt) => {
+            _this.plumbIns.bind("contextmenu", (connect_info,evt) => {
                 console.log('contextmenu', evt)
+                _this.showMenu("line",connect_info,evt)
             })
 
             // 连线
             _this.plumbIns.bind("beforeDrop", (evt) => {
+                if(evt.scope=="activeScope")
+                    return 
                 let from = evt.sourceId
                 let to = evt.targetId
                 
@@ -548,6 +723,8 @@ export default {
 
             // beforeDetach
             _this.plumbIns.bind("beforeDetach", (evt) => {
+                if(evt.scope=="activeScope")
+                    return 
                 let line=_this.lineList.find(x=>x.source==evt.sourceId && x.target==evt.targetId)
                 if(line.canDelete){
                     return true
@@ -557,7 +734,152 @@ export default {
             _this.plumbIns.setContainer(_this.$refs.efContainer)
             
         },
-        
+        showMenu (type,for_obj,event,node_this) {
+            let _this=this
+            if(_this.in_menu)
+                return
+            try{
+                _this.in_menu=true
+                if(type=="画布"){
+                    event.preventDefault()
+                    let menu_items=[ {label: "添加来至于报表的数据",icon: "el-icon-attract",onClick:function(){
+                        _this.addUrlFrom('html')
+                    }},
+                    
+                    {label: "添加专业合并",icon: "el-icon-attract",onClick:function(){
+                        _this.addUrlFrom('sql')
+                    }},
+                    {divided:true},
+                    {label: "查询数据集数据",icon: "el-icon-view",onClick:function(){
+                        _this.query_data() 
+                    }},
+                    
+                    {label: "执行生成",icon: "el-icon-video-play",onClick:function(){
+                        _this.files_template_exec() 
+                    }},
+                    {label: "保存",icon: "el-icon-save",onClick:function(){
+                        _this.save_config() 
+                    }},
+                    {label: "添加自定义变量",onClick:function(){
+                        _this.varDetailDialog_show('detail')
+                    }},
+                    {divided:true},
+                    
+                    {label: "重新载入定义",icon: "el-icon-refresh",onClick:function(){
+                        _this.reload_define() 
+                    }},
+                    
+                    {label: "总控参数设置",onClick:function(){
+                        _this.form_input_title = '需要的参数'
+                        _this.form_input_option = {
+                          addBtn:false,delBtn:true,cellBtn:true,editBtn:false,cellEdit:true,rowKey:'name',
+                          column: [{ prop: 'name', label: '参数名字', cell:false,formslot:true  },{ prop: 'value', label: '参数值', cell:true }] 
+                        }
+                        _this.form_input_obj = _this.config_data.form_input
+                        _this.form_input_submit=function(){
+                          _this.config_data.form_input=_this.form_input_obj 
+                          _this.form_input_obj={}
+                          }
+                        _this.form_input_visible = true
+
+                    }},
+                    ]
+                    this.$contextmenu({items:menu_items,event,customClass: "contextmenu_zb",zIndex: 3000,minWidth: 230})
+                }else
+                if(type=="line"){
+                    event.preventDefault()
+                    let from = for_obj.source.id, to = for_obj.target.id
+                    let from_type=from.split(":")[0], to_type=to.split(":")[0]
+                    let from_name=from.split(":")[1], to_name=to.split(":")[1]
+                    
+                    if(to_type!='合并')
+                        return
+
+                    let menu_label="删除"
+                    if (to_type=='来自' || from_type=='URL' || from_type=='sql' || ((from_name==to_name) && false==['上次','昨日'].includes( from_type) ))
+                        return
+                    
+                    this.$contextmenu({
+                        items: [
+                        {label: from+"=>"+to},{divided:true},
+                        {label: from_name+"【"+(from_type=="文件"?"第一列" :  _this.getByName(from_name).obj?.key_column)+"】=="+
+                             to_name+"【"+_this.getByName(to_name).obj?.key_column+"】"},{divided:true},
+                        {
+                            label: menu_label,icon: "el-icon-delete",
+                                onClick: () => {
+                                    if(menu_label=='删除'){
+                                        this.$confirm(`确实要删除针对【${to_name}】的来至于【${from_name==to_name?from_type:from_name}】的数据合并吗？`,'提示', 
+                                        {
+                                            confirmButtonText: '确定',
+                                            cancelButtonText: '取消',
+                                            type: 'warning'
+                                        })
+                                        .then( function () {
+                                            let target=_this.getByName(to_name)
+                                            if(from_name==to_name){
+                                                if(from_type=='昨日')
+                                                    from_name='备份'
+                                                if(from_type=='上次')
+                                                    from_name='上次'
+                                            }else{
+                                                if(['昨日','上次'].includes( from_type))
+                                                    if(from_type=='昨日')
+                                                        from_name='备份'+":"+from_name
+                                                    if(from_type=='上次')
+                                                        from_name=from_type+":"+from_name
+                                            }
+                                            let find_from_item=target.obj.append?.find(x=>x.from==from_name)
+                                            if (find_from_item){
+                                                target.obj.append.splice(target.obj.append.indexOf(find_from_item),1)
+                                                let ds_depend_idx=_this.config_data.ds_depend.findIndex(x=>x.master==from && x.depend==to)
+                                                _this.config_data.ds_depend.splice(ds_depend_idx,1)
+                                                _this.removeConnectionsActive()
+                                                let connections=_this.plumbIns.getConnections({source:from,target:to})
+                                                if (connections.length) {
+                                                    connections.forEach((connection, index) => {
+                                                        _this.plumbIns.deleteConnection(connection)
+                                                    })
+                                                }
+                                            }
+                                        })
+                                        .catch(function () {})
+                                        
+                                    }
+                                }
+                        },
+                        ],event,customClass: "contextmenu_zb",zIndex: 3000,minWidth: 230
+                    });
+                }else{
+                    event.preventDefault()
+                    let node=for_obj
+                    let menu_items=[ {label: "编辑", icon: "el-icon-edit",onClick:function(){
+                        node_this.editNode(node,type) 
+                    }},{divided:true},]
+                    if (['裁剪'].includes(type)) {
+                    if(node['backup']==undefined || node['backup']=='')
+                        menu_items.push({label: "启动备份功能",onClick:function(){node['backup']='1';_this.fresh_plumb(); }})
+                    else
+                        menu_items.push({label: "关闭备份功能",onClick:function(){node['backup']='';_this.fresh_plumb(); }})
+
+                    }
+
+                    if(type=='文件' && node.file.endsWith('.csv')) 
+                        menu_items.push({label: "数据作为数据源",onClick:function(){node_this.csvAsDatasource(node,type) }})
+                    if(type=='文件' && node.canOutput=='true' && node.file.endsWith('.xlsx')) 
+                        menu_items.push({label: "数据作为数据源",onClick:function(){node_this.resultAsDatasource(node,type) }})
+                    if (['最终','变量'].includes(type))
+                        menu_items.push({label: "克隆",icon: "el-icon-document-copy",onClick:function(){node_this.copyNode(node,type) }})
+                    
+                    menu_items.push({label: "删除",icon: "el-icon-delete",onClick:function(){node_this.deleteSelected(node,type)} })
+                    this.$contextmenu({items:menu_items,event,customClass: "contextmenu_zb",zIndex: 3000,minWidth: 230})
+                }
+            }finally{
+                setTimeout(() => {
+                    _this.in_menu=false
+                }, 1)
+            }
+            return false;
+        },
         // 删除线
         deleteLine(source, target) {
             this.lineList = this.lineList.filter(function (line) {
@@ -567,5 +889,97 @@ export default {
                 return true
             })
         },
+        files_template_exec(){
+            let old_this=this
+            service.files_template_exec(this.curr_report_id, { config_data: this.config_data })
+            .then(data=>{
+                this.files_template_exec_result = data
+                this.files_template_exec_result_visilbe = true
+                Object.assign(old_this.config_data,data.config_data)
+                this.fresh_plumb()
+            }).catch(error=>{
+                Object.assign(old_this.config_data,error.config_data)
+                this.fresh_plumb()
+            })
+        },
+        show_result(res_data){
+            this.query_result_visible = true
+            if(res_data.ds_dict){
+              res_data.df_arr.forEach(one_df=>{
+                let one=JSON.parse( res_data.ds_dict[one_df] )
+                res_data.ds_dict[one_df]={data: convert_array_to_json(one.data,0,-1,one.columns),columns:one.columns}
+              })
+            }
+            this.ds_data=res_data
+            if(res_data.data_from){
+                res_data.data_from.ds.forEach(ds=>{
+                    let old_name=ds.name
+                    let name_idx=res_data.df_arr.indexOf(ds.name)
+                    while(this.getByName(ds.name).obj){
+                        ds.name="修改"+Math.ceil(Math.random() * 999)
+                    }
+                    res_data.df_arr[name_idx]=ds.name
+                    if(old_name!=ds.name){
+                        res_data.ds_dict[ds.name]=res_data.ds_dict[old_name]
+                        delete res_data.ds_dict[old_name]
+                    }
+                    this.config_data.ds_queue.push(ds.name)
+                })
+                this.config_data.data_from.push(res_data.data_from)
+            }
+            this.cur_ds=res_data.df_arr[0]
+        },
+        query_data( ) {
+            let old_this = this
+             service.query_data({ config_data: this.config_data,curr_report_id: this.curr_report_id }
+            ).then(res_data=>{
+                old_this.show_result(res_data)
+                Object.assign(old_this.config_data,res_data.config_data)
+            }).catch(error=>{
+              if( typeof(error.config_data)=="object")
+                  Object.assign(old_this.config_data,error.config_data)
+            })
+            this.fresh_plumb()
+        },
+        reload_define(){
+            //this.$emit("reload_define")    
+            let _this=this
+            service.getZhanbao(this.curr_report_id).then(data_r=>{
+                data_r.config_data = JSON.parse(data_r.config_txt)
+                if(undefined== data_r.config_data.template_output_act)
+                    data_r.config_data.template_output_act=[]
+                Object.assign( this.config_data , data_r.config_data)
+                if(data_r.config_data.ds_depend==undefined)
+                    delete this.config_data.ds_depend
+                if(data_r.config_data.ds_queue==undefined)
+                    delete this.config_data.ds_queue
+
+                if(!Array.isArray(this.config_data.template_output_act))
+                    this.config_data.template_output_act=[]
+                let template_output=this.config_data.template_output_act
+                data_r.fileList.forEach(one=>{
+                    if(template_output.filter(x=>x.file===one.name).length===0){
+                    template_output.push({'file':one.name,'canOutput':"false",'wx_file':'','wx_msg':''})
+                    }
+                })                
+                this.fresh_plumb()
+            }).catch(error=>{this.$message({message: error,type: 'error'});})
+            
+        },
+        async save_config() {
+            const data = await service.save_config(this.curr_report_id, 
+                JSON.parse(JSON.stringify( { config_data: this.config_data,
+                    report_name: this.report_name,
+                    cron_str: this.cron_str,
+                    cron_start: this.cron_start
+                }))
+              )
+            if(data.errcode && data.errcode!=0){
+              this.$message.error(data.message)
+            }
+            else
+            this.$message.success("保存成功！")
+        },
+        
     }
 }

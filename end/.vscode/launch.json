@@ -52,6 +52,9 @@
             "request": "launch",
             "cwd": "${workspaceFolder}",
             "program": "${workspaceFolder}/hello_app/webapp.py",
+            "env": {
+                "GEVENT_SUPPORT": "True"
+            },
             "console": "integratedTerminal"
         },        
         {

@@ -1,4 +1,4 @@
-import sys, os, zipfile,re, requests,shutil,json,glob
+import sys, os, zipfile,re, requests,shutil,json,glob,lxml
 sys.path.append(os.path.realpath(os.curdir+"/hello_app/"))
 sys.path.append(os.path.realpath(os.curdir+"/hnclic/"))
 import numpy as np
@@ -66,11 +66,40 @@ def convert_file_for_pptx(out_filename,template_file,ds_dict):
     unzip_single(template_file,unzip_path)
     embeddings_path=os.path.join(unzip_path,"ppt\\embeddings")
     tmp_pd_dict={}
+    tmp_excel_active_sheet_dict={}
     if(os.path.exists(embeddings_path)):
         for x in os.listdir(embeddings_path):
             if x.endswith('.xlsx'):
-                convert_file_for_xlsx(os.path.join(embeddings_path,x),os.path.join(embeddings_path,x),ds_dict)
+                active_name=convert_file_for_xlsx(os.path.join(embeddings_path,x),os.path.join(embeddings_path,x),ds_dict,outImage=False)
+                tmp_excel_active_sheet_dict[x]=active_name
                 tmp_pd_dict[x]=pd.read_excel(os.path.join(embeddings_path,x))
+
+    xlsx_emf_arr=[]
+    root_path=os.path.join(unzip_path,"ppt") 
+    for slide in os.listdir(f"{root_path}\slides"):
+        if slide.endswith(".xml")==False:
+            continue
+        doc = lxml.etree.XML(open(f"{root_path}\\slides\\{slide}",'rb').read())  
+        id_embed_dict={}
+        for one_oleObj in doc.xpath("//p:oleObj", namespaces=doc.nsmap):
+            for one_blip in one_oleObj.xpath(".//a:blip",namespaces=doc.nsmap):
+                id=one_oleObj.attrib.get('{'+doc.nsmap['r']+'}id')
+                embed=one_blip.attrib.get('{'+doc.nsmap['r']+'}embed')
+                id_embed_dict[id]=embed
+        if len(id_embed_dict)>0:
+            rels=lxml.etree.XML(open(f"{root_path}\\slides\_rels\\{slide}.rels",'rb').read())  
+            for id,embed in id_embed_dict.items():
+                xlsx=rels.xpath(f"//*[local-name() = 'Relationship'][@Id='{id}'] ")[0].attrib['Target']
+                emf=rels.xpath(f"//*[local-name() = 'Relationship'][@Id='{embed}'] ")[0].attrib['Target']
+                xlsx_emf_arr.append({"xlsx":xlsx,"emf":emf,"slide":slide})    
+    for one in xlsx_emf_arr:        
+        png_file=os.path.realpath(root_path+"/slides/"+one['xlsx']+"1.png" )
+        emf_file=os.path.realpath(root_path+"/slides/"+one['emf'])
+        excel2img.export_img(root_path+"/slides/"+one['xlsx'],png_file,tmp_excel_active_sheet_dict[one['xlsx'].split("/")[-1]])
+        my_cmd= f'convert "{png_file}" "{emf_file}"'
+        cmd_output=os.popen(my_cmd).readlines()
+        os.remove(png_file)
+
     zipDir(unzip_path,out_filename)
     shutil.rmtree(out_filename+"t")
 
@@ -245,12 +274,16 @@ def ppt2png(pptFileName,idx=0):
 
 
 
-def convert_file_for_xlsx(out_filename,template_file,ds_dict, appendFunDict=None):
+def convert_file_for_xlsx(out_filename,template_file,ds_dict, appendFunDict=None,outImage=True):
     '''按模板转换xlsx文件
     按字典转换模板文件，输出为out_filename
     '''
     def calc_cell(sheet):
+        line_cnt=0
         for row in sheet.rows:
+            if line_cnt>100:
+                return
+            line_cnt=line_cnt + 1
             need_lines=0
             for cell in row:
                 #模板计算
@@ -288,7 +321,6 @@ def convert_file_for_xlsx(out_filename,template_file,ds_dict, appendFunDict=None
     try:
         wb = load_workbook(template_file)
         real_dict=ds_dict.copy()
-        
         #loop;单位;a
         list_g=[]
         for sheet in wb.worksheets:
@@ -310,13 +342,15 @@ def convert_file_for_xlsx(out_filename,template_file,ds_dict, appendFunDict=None
         for sheet in wb.worksheets:
                 calc_cell(sheet)
         wb.save(out_filename)
-        cnt=0
-        page_images=[]
-        for sheet in wb.worksheets: 
-            if sheet.title.startswith("_") or (list_g is not None and list_g.count(sheet.title)>0):
-                page_images.append((f"{out_filename}{ '{:0>2d}'.format(cnt) }{sheet.title}.png", sheet.title))
-            cnt=cnt+1
-        excel2img.export_img_many(out_filename,page_images)
+        if outImage:
+            cnt=0
+            page_images=[]
+            for sheet in wb.worksheets: 
+                if sheet.title.startswith("_") or (list_g is not None and list_g.count(sheet.title)>0):
+                    page_images.append((f"{out_filename}{ '{:0>2d}'.format(cnt) }{sheet.title}.png", sheet.title))
+                cnt=cnt+1
+            excel2img.export_img_many(out_filename,page_images)
+        return wb.active.title
     finally:
         if wb!=None:
             wb.close()

@@ -62,7 +62,7 @@ def _sendWxMessage(res):
     如果post 图像或者html文件 则 发送为图文消息  否则 发送为文本消息
     """
     wxid=res['wxid']
-    if wxid is None or wxid.strip()=='':
+    if wxid is None or wxid.strip()=='' or len(wxid[5:].strip())==0:
         return    
     content=res['content']
     if wxid.startswith("qywx:"):
@@ -187,24 +187,6 @@ def user_report_upload_path(curr_report_id,created=False)->str:
                 os.makedirs(ret)
             return ret
 
-#定时任务，用户定义的战报
-def zb_execute(rptid,config_data,userid,report_name=""):
-    print(f"start:{rptid}")
-    #loop = asyncio.new_event_loop()    
-    try:
-        redis.sadd("zb:executing",rptid)
-        #asyncio.set_event_loop(loop)
-        asyncio.run(ce.files_template_exec(rptid,config_data,userid,config['UPLOAD_FOLDER'],wx_queue=msg_queue))
-    except Exception as e:
-        msg_queue.put({'type':'sendMessage',"wxid":'qywx:'+userid,"content":f"{report_name},执行报错。错误信息："+ str(e)})
-        print({'type':'sendMessage',"wxid":'qywx:'+userid,"content":f"{report_name},执行报错。错误信息："+ str(e)})
-    finally:
-        redis.srem("zb:executing",rptid)
-        #loop.close()
-    print(f'new Tick! The time is:{datetime.now()} \tuserid:{userid}\trptid={rptid} ')
-
-
-
 from apscheduler.executors.pool import ThreadPoolExecutor, ProcessPoolExecutor
 scheduler = BackgroundScheduler(#executors = { 'zb_processpool': ProcessPoolExecutor()}
                         )
@@ -239,6 +221,9 @@ def start_scheduler():
                     row = cursor.fetchone()
         scheduler.add_job(msg_queue.sendMessage,'interval', max_instances=10,seconds=1)
         scheduler.start()
+        print("cron 启动完成！")
+    else:
+        print("cron 不启动！")
 
 def update_scheduler(id,cron_str,cron_start,config_data,userid,report_name):
     if scheduler.get_job(str(id)):

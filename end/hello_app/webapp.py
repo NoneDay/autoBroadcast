@@ -1,3 +1,9 @@
+#import nest_asyncio
+#nest_asyncio.apply()
+#
+#from gevent import monkey
+## 猴子补丁，将之前代码当中所有不契合协程的代码修改为契合
+#monkey.patch_all()
 # Entry point for the application.
 import flask,os,sys
 sys.path.append(os.path.realpath(os.curdir))
@@ -9,6 +15,7 @@ from hnclic import convert_main as ce,glb
 import views,tianbao,user
 import decimal
 import numpy as np
+
 
 class DecimalDateEncoder(json.JSONEncoder):  
     def default(self, obj):  
@@ -37,7 +44,7 @@ class DecimalDateEncoder(json.JSONEncoder):
 
         elif isinstance(obj, (np.void)): 
             return None
-            return json.JSONEncoder.default(self, obj) 
+        return json.JSONEncoder.default(self, obj) 
 
 
 app.config["JSON_AS_ASCII"]=False
@@ -45,22 +52,42 @@ app.json_encoder = DecimalDateEncoder
 
 app.secret_key = os.urandom(24)
 
-app.jinja_env.auto_reload=True
+#app.jinja_env.auto_reload=True
 
 app.register_blueprint(views.mg, url_prefix='/mg')
 app.register_blueprint(tianbao.tb, url_prefix='/tb')
+app.static_url_path="/static"
+app.static_folder= "..\\..\\front\\dist"
+glb.start_scheduler()
 ################################
 
 #app.config['wx_friendList']=requests.get("http://127.0.0.1:10001/allUserInfo").json()
 #requests.post("http://127.0.0.1:10001/sendMessage",data='{"wxid":"flydao3000","content":"wx开始了"}'.encode('utf-8'))
-
-if __name__ == '__main__':    
-    glb.start_scheduler()
-    #wx_receive_message()
-    app.static_url_path="/static"
-    app.static_folder= "..\\..\\front\\dist"
-
-    from gevent import pywsgi
-    server = pywsgi.WSGIServer(('0.0.0.0', 5050 if glb.is_test else 5000), app)
+def penevt_main():
+    from gevent.pywsgi import WSGIServer
+    server = WSGIServer(('0.0.0.0', 5050 if glb.is_test else 5000), app)
     server.serve_forever()
     #app.run(host='0.0.0.0')
+def twisted_main():
+    # https://blog.csdn.net/bamboo_2001/article/details/108243592 windows下使用Twisted发布flask应用
+    global app
+    from twisted.web.server import Site
+    from twisted.web.wsgi import WSGIResource
+    from twisted.internet import reactor
+    from twisted.python import log
+    log.startLogging(sys.stdout)
+    resource=WSGIResource(reactor,reactor.getThreadPool(),app)
+    reactor.suggestThreadPoolSize(100)
+    site=Site(resource)
+    reactor.listenTCP(5050 if glb.is_test else 5000, site)
+    
+    reactor.run()
+
+# set PYTHONPATH=F:\autoBroadcast-master\end\;twistd -n web --port tcp:5000 --wsgi hello_app.webapp.app 
+if __name__ == '__main__':    
+    
+    #wx_receive_message()
+    if glb.is_test==True:
+        penevt_main()
+    else:
+        twisted_main()

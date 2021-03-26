@@ -345,7 +345,5 @@ export default {
     padding-right: 1px;
     overflow: hidden;
 }
-.avue-crud__pagination {
-  display: none;
-}
+
 </style>

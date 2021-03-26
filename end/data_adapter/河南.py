@@ -61,7 +61,8 @@ class MyDataInterface(DataInterface):
                 data_from['ds']=[{"t": "json","pattern": soup_first_data['name'],"end": soup_first_data['extend_lines'][1]+1,
                         "start": soup_first_data['colName_lines'][1]+1,"columns": "auto","view_columns": "","sort": "","name": "修改这里",
                         "old_columns": soup_first_data['columns']}]
-                data_from['desc']=soup_first_data['title']
+                if data_from.get('desc','')=='':
+                    data_from['desc']=soup_first_data['title'] 
         else:
             self.soup = lxml.html.fromstring(self.html_text) 
             #查出来取数form所需要的参数，传递给前台设置到config中
@@ -74,7 +75,9 @@ class MyDataInterface(DataInterface):
             print(f"{data_from['url']}分析html用时： {time.time()-self.start_time}")
 
             if data_from['ds'] is None or len(data_from['ds'])==0:
-                data_from['ds'],data_from['desc']=self._guess_ds()
+                data_from['ds'],desc=self._guess_ds()
+                if data_from['desc']=='':
+                    data_from['desc']=desc
             print(f"{data_from['url']}_guess_ds用时： {time.time()-self.start_time}")
         return self.soup,form_inputs,None
 

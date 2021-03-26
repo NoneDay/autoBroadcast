@@ -21,4 +21,7 @@ export default {
   height: 100%;
   overflow: hidden;
 }
+.el-table td, .el-table th {
+    padding: 1px 0;
+}
 </style>

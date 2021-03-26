@@ -10,7 +10,7 @@
               class="el-icon-full-screen"></i>
           </div>
         </div>
-  <el-tag>{{last_statement}}</el-tag>
+    {{last_statement}}
     <avue-form :option="option" v-model="obj" v-if="dialogVisible"  @submit="handleSubmit" ref="form">
     </avue-form>
 </el-dialog>
@@ -56,6 +56,10 @@ export default {
                       ]
                     },
                     {width: 200,label: '值',prop: "value",},
+                    {width: 200,label: '条件间的关系',prop: "op_op",type: 'select',value: "&",
+                      dicData: [{label: '并且',value: "&"}, {label: '或者',value: "|"},
+                      ]
+                    },
                   ]
                 }
               },
@@ -65,15 +69,16 @@ export default {
                   dicData: [{label: '降序',value: 'False'},{label: '升序',value: 'True'}]
               }, 
               
-              {label: '范围类型',prop: "topType",type: 'radio',value:"top",span:8,
-                  dicData: [{label: '前几',value: 'top'},{label: '后几',value: 'bottom'},{label: '中间',value: 'between'}]
+              {label: '范围类型',prop: "topType",type: 'radio',value:"top",span:8,row:true,
+                  dicData: [{label: '前几',value: 'top'},{label: '后几',value: 'bottom'}
+                  //,{label: '中间',value: 'between'}
+                  ]
               },
-              {label: '前几',prop: "top",type: 'number',span:7,display:true,row:true,},
-              {label: '后几',prop: "bottom",type: 'number',span:7,display:false,row:true},
-
               {label: '开始',prop: "start",type: 'number',span:7,display:false},
               {label: '结束',prop: "end",type: 'number',span:7,display:false,row:true},
-
+              {label: '后几',prop: "bottom",type: 'number',span:7,display:false,row:true},
+              {label: '前几',prop: "top",type: 'number',span:7,display:false,row:true},
+              
               {label: '结果类型',prop: "resultType",type: 'radio',value:"none",span:8,
                   dicData: [{label: '明细',value: 'detail'},{label: '汇总',value: 'sum'},{label: '无',value: 'none'}]
               },{label: '行间填充',prop: "line_join",value:"\\n",display:false},
@@ -147,6 +152,7 @@ export default {
       let col_bottom =this.findObject(this.option.column,'bottom');
       let col_start =this.findObject(this.option.column,'start');
       let col_end =this.findObject(this.option.column,'end');
+      
       if(this.obj.topType==='top'){
         col_top.display=true
         col_bottom.display=false
@@ -167,15 +173,22 @@ export default {
     },
   }, 
   created(){
+    this.target_obj.where?.forEach(x=>{
+      if(x.op_op==undefined)
+        x.op_op="&"
+    })
     this.obj= this.deepClone( this.target_obj)
     this.all_ds.forEach(element => {
         this.ds_dicData.push({label: element.name,value: element.name})
     });
     this.option=this.getOption()
-    if(this.obj.var_type=="detail"){
-      this.obj_resultType()
-      this.obj_topType()
-    }
+    this.$nextTick(function(){
+      if(this.obj.var_type=="detail"){
+        this.obj_resultType()
+        this.obj_topType()
+      }
+    })
+
   },
   watch: {
     dialogVisible(val) {
@@ -220,6 +233,8 @@ export default {
         if(this.obj.where && this.obj.where.length>0){
             let where_arr =[]
             this.obj.where.forEach(x=>{
+                if(x.op_op==undefined || (x.op_op!='&' && x.op_op!='|'))
+                  x.op_op="&"
               //if (x.field=='__序号__')
               //  where_arr.push( "(index+1)"+ x.op + x.value.replaceAll(/[‘|’|“|”]/g,'\'') )
               //else
@@ -228,9 +243,10 @@ export default {
                 where_arr.push(`( (${this.obj.ds}.index+1) ${x.op}`+ x.value.replaceAll(/[‘|’|“|”]/g,'\'') +")" )
               else
                 where_arr.push(`(${this.obj.ds}['${x.field}']${x.op}`+ x.value.replaceAll(/[‘|’|“|”]/g,'\'') +")")
+              where_arr.push(x.op_op)
             }
             )
-            ret_s=ret_s+'['+ where_arr.join(" & ")  + ']'
+            ret_s=ret_s+'['+ where_arr.slice(0,where_arr.length-1).join(" ")  + ']'
         }
         if(this.obj.group && this.obj.group.filter(x=>x!="__序号__").length>0){
           console.info(this.obj.group)
@@ -280,7 +296,7 @@ export default {
   },
   data() {
       return {
-        fullscreen:false,
+        fullscreen:true,
         dialogVisible:this.visible,        
         ds_dicData:[],
         field_dicData:[],

@@ -177,7 +177,5 @@ export default {
 .el-table__body tr.current-row>td {
     background-color: #cad2da;
 }
-.avue-crud__pagination {
-  display: none;
-}
+
 </style>

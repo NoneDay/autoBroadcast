@@ -68,17 +68,23 @@ def _to_chinese4(num):
 
 def DataFrame_oneCol_contact(df):
     return '\n'.join([str(x) for x in df.values])
-
+# 计算相对于本周的那一周的周几对应的是那一天
 def _whatDayToDate_(d=1,w=0):
     now=datetime.date.today()
     t_date=now-datetime.timedelta(days=now.weekday()-7*w-d+1)
     return t_date.strftime("%Y-%m-%d")
+# 计算相对于今天的+或-天，+或-周 是那一天
+def _addDayForToday_(d,w=0,fmt="%Y-%m-%d"):
+    now=datetime.date.today()
+    return (now+datetime.timedelta(days=d,weeks=w)).strftime(fmt)
+     
 
 def get_jinja2_Environment():
     env = jinja2.Environment()
-    env.globals['time']=time
-    env.globals['datetime']=datetime.datetime
     now = datetime.datetime.now()
+    env.globals['now']=now
+    env.globals['timedelta']=datetime.timedelta
+    
     #https://stackoverflow.com/questions/904928/python-strftime-date-without-leading-0 取掉额外的0
     env.globals['_今日_']=now.strftime("%#m月%#d日")
     env.globals['_昨日_']=(now+datetime.timedelta(days=-1)).strftime("%#m月%#d日")
@@ -96,7 +102,7 @@ def get_jinja2_Environment():
     env.globals['_今天_']=(now).strftime("%Y-%m-%d")
     env.globals['_昨天_']=(now-datetime.timedelta(days=1)).strftime("%Y-%m-%d")
     env.globals['_whatDayToDate_']=_whatDayToDate_
-
+    env.globals['_addDayForToday_']=_addDayForToday_
 
     env.filters['num2cn'] = _to_chinese4
     env.filters['dflj'] = DataFrame_oneCol_contact
@@ -143,11 +149,15 @@ def guess_col_names(all_lines,rule_str=None,end_line=None):
         ret=df.sum().to_list()
     else :
         if rule<0:
-            return all_lines[end_line+rule:end_line]
-    def inner_func(x,y,i=0):
-        return x+[y] if y not in x else x+[y+str(i)] if (y+str(i)) not in x else inner_func(x,y,i+1)
-    ret=reduce(inner_func, [[], ] + ret) #将重复的表头后面加上序号
+            return all_lines[end_line+rule:end_line]    
+    ret=repeat_rearrange(ret) #将重复的表头后面加上序号
     return list(map(lambda x:re.sub(r"[\s|'|\"]+","",x),ret))  ,end_line  #去除特殊字符
+
+def repeat_rearrange(cols):
+    cols=list(map(lambda x:str(x),cols ))
+    def inner_func(x,y,i=0):
+        return x+[y] if y not in x else x+[str(y)+str(i)] if (y+str(i)) not in x else inner_func(x,y,i+1) 
+    return reduce(inner_func, [[], ] + cols) #将重复的表头后面加上序号
 
 __special_characters_replacements={
     "“":"\"",
@@ -193,7 +203,7 @@ def htmltableToArray(select_result):
             i_row=int(td.attrib.get('rowspan','1'))
             #保证有充足的地方存放数据
             for x in range(i_row):
-                while len(idex_t[i_tr+x]) < lj_col+i_col : 
+                while i_tr+x <len(idex_t) and len(idex_t[i_tr+x]) < lj_col+i_col : 
                     idex_t[i_tr+x]=idex_t[i_tr+x]+[None]
             for x in range(i_row):
                 for y in range(i_col):
@@ -208,7 +218,8 @@ def htmltableToArray(select_result):
                     except IndexError as e:
                         print(e)
                     #存放数据
-                    idex_t[i_tr+x][lj_col+y]="".join(td.text_content().split())#去除特殊字符的专业写法 "".join(str.strip(td.text)) #td.text.split()
+                    if  i_tr+x <len(idex_t):
+                        idex_t[i_tr+x][lj_col+y]="".join(td.text_content().split())#去除特殊字符的专业写法 "".join(str.strip(td.text)) #td.text.split()
             lj_col=lj_col+i_col
     return idex_t
 
@@ -360,8 +371,26 @@ def AES_decrypt(secret_str,key):
     # 执行解密密并转码返回str
     decrypted_text = str(aes.decrypt(base64_decrypted), encoding='utf-8').replace('\0', '')
     return decrypted_text
- 
- 
+
+import logging,logging.handlers
+def get_logger(log_path,name=None):
+    logger = logging.getLogger(name)
+    if not logger.handlers:
+        LOG_FORMAT = "%(asctime)s - %(levelname)s: %(message)s"
+        DATE_FORMAT = "%m/%d/%Y %H:%M:%S %p"
+        # 第一步，创建一个logger
+        logger.setLevel(logging.INFO)  # Log等级总开关
+        # 第二步，创建一个handler，用于写入日志文件
+        fh = logging.handlers.RotatingFileHandler(log_path, maxBytes=10*1024*1024,encoding="utf8")
+        fh.setLevel(logging.DEBUG)  # 输出到file的log等级的开关
+        # 第三步，定义handler的输出格式
+        formatter = logging.Formatter("%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s")
+        fh.setFormatter(formatter)
+        # 第四步，将logger添加到handler里面
+        logger.addHandler(fh)
+    return logger
+
+
 if __name__ == '__main__':
     org_str = 'http://mp.weixin.qq.com/s?__biz=MjM5NjAxOTU4MA==&amp;mid=3009217590&amp;idx=1&amp;sn=14532c49bc8cb0817544181a10e9309f&amp;chksm=90460825a7318133e7905c02e708d5222abfea930e61b4216f15b7504e39734bcd41cfb0a26d&amp;scene=27#wechat_redirect'
     # 秘钥

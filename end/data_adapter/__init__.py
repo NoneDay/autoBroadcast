@@ -10,7 +10,7 @@ user_login_dict={
 
 
 
-def get(data_from,userid):
+def get(data_from,userid,user_login=None):
     #if data_from['type'] in ["html",'json'] and (data_from['ds'] is None or len(data_from['ds'])==0):
     #    match_arry=[]
     #    url=data_from['url']
@@ -42,10 +42,11 @@ def get(data_from,userid):
 
     if module is None:
         raise RuntimeError(f"没有实现类型<{module_name}>！")
-    with glb.db_connect() as conn:
-        with conn.cursor(as_dict=True) as cursor:
-            cursor.execute('SELECT * FROM login_tbl WHERE sys_name=%s', sys_name)
-            user_login=cursor.fetchone()
+    if user_login is None:
+        with glb.db_connect() as conn:
+            with conn.cursor(as_dict=True) as cursor:
+                cursor.execute('SELECT * FROM login_tbl WHERE sys_name=%(sys_name)s and worker_no=%(worker_no)s', {"sys_name":sys_name,"worker_no":userid})
+                user_login=cursor.fetchone()
     #user_login=user_login_dict.get(sys_name,{})
     #user_login_decrypt=dict()
     #for k,v in user_login.items():

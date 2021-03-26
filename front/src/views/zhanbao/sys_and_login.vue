@@ -193,7 +193,7 @@ export default {
       type: 'input',
       label: '允许用户',
       span: 12, rules: [{required: true}],
-      display: true,
+      display: true,value:'.*',
       prop: 'allow_userid'
     },
     {
@@ -211,7 +211,7 @@ export default {
     {
       type: 'dynamic',
       label: '登陆提交内容',
-      span: 24,
+      span: 12,
       display: true,
       children: {
         align: 'center',headerAlign: 'center',index: false,addBtn: true,delBtn: true,
@@ -221,12 +221,11 @@ export default {
         ]
       },prop: 'login_data_template'
     },
-    {type: 'input',label: '登陆成功会有',span: 12,display: true,prop: 'login_success'},
-    {type: 'input',label: '登陆错误会有',span: 12,display: true,prop: 'login_error'},
+
     {
       type: 'dynamic',
       label: '登陆提交:header',
-      span: 24,
+      span: 12,
       display: true,
       children: {
         align: 'center',
@@ -253,11 +252,12 @@ export default {
       },
       prop: 'headers'
     },
-
+    {type: 'input',label: '登陆成功会有',span: 12,display: true,prop: 'login_success'},
+    {type: 'input',label: '登陆错误会有',span: 12,display: true,prop: 'login_error'},
     {
       type: 'dynamic',
       label: '查询报表:header',
-      span: 24,
+      span: 12,
       display: true,
       children: {
         align: 'center',
@@ -286,35 +286,19 @@ export default {
     },
     
     {
-      type: 'dynamic',
-      label: '查询报表:cookies',
-      span: 24,
-      display: true,
-      children: {
-        align: 'center',
-        headerAlign: 'center',
-        index: false,
-        addBtn: true,
-        delBtn: true,
+      type: 'dynamic',prop: 'next_cookies',
+      label: '查询报表:cookies',span: 12,display: true,
+      children: {align: 'center',headerAlign: 'center',index: false,addBtn: true,delBtn: true,
         column: [
-          {
-            type: 'input',
-            label: '属性',
-            span: 24,
-            display: true,
-            prop: 'prop'
-          },
-          {
-            type: 'input',
-            label: '值',
-            span: 24,
-            display: true,
-            prop: 'value'
-          }
+          {type: 'input',label: '属性',span: 24,display: true,prop: 'prop'},
+          {type: 'input',label: '值',span: 24,display: true,prop: 'value'}
         ]
       },
-      prop: 'next_cookies'
-    }
+      
+    },
+
+ 
+
                 ]
                 }
     }

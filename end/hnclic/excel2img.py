@@ -91,7 +91,7 @@ def export_img(fn_excel, fn_image, page=None, _range=None):
                 # This might be a "chart page", try exporting it as a whole
                 rng = excel.workbook.Sheets(page).Export(os.path.abspath(fn_image))
                 return
-            if str(rng) == "None":
+            if False and str(rng) == "None":
                 # No used cells on a page. maybe there's a single object.. try simply exporting as png
                 shapes = excel.workbook.Sheets(page).Shapes
                 if len(shapes) == 1:

@@ -12,31 +12,10 @@ import hnclic.tasks
 import pandas as pd
 from functools import wraps
 from concurrent.futures import Future, ThreadPoolExecutor
-
+import data_adapter
 mg = Blueprint('mg', __name__, template_folder='templates')
 
-def run_async(func):
-    @wraps(func)
-    def _wrapper(*args, **kwargs):
-        call_result = Future()
-        def _run():
-            loop = asyncio.new_event_loop()
-            try:
-                result = loop.run_until_complete(func(*args, **kwargs))
-            except Exception as error:
-                call_result.set_exception(error)
-            else:
-                call_result.set_result(result)
-            finally:
-                loop.close()
- 
-        loop_executor = ThreadPoolExecutor(max_workers=1)
-        if has_request_context():
-            _run = copy_current_request_context(_run)
-        loop_future = loop_executor.submit(_run)
-        loop_future.result()
-        return call_result.result()
-    return _wrapper
+import asyncio
 
 @mg.route("/chg/<int:id>")
 def chg(id):
@@ -55,39 +34,45 @@ def errorhandler_500(error):
                 'name'  : exc_traceback.tb_frame.f_code.co_name,
                 'type'  : exc_type.__name__,
                 'message' : str(exc_value), # or see traceback._some_str()
+                "config_data":request.json.get('config_data','')
                 }        
     resp = make_response(jsonify(traceback_details), 500)
     return resp
+if glb.is_test==True:
+    @mg.route("/initDatafrom/", methods=['GET', 'POST'])
+    def initDatafrom():
+        data_from=request.json['data_from']    
+        report_id=request.json['curr_report_id']  
+        upload_path=glb.user_report_upload_path(report_id )   
+        if data_from['type']=="file":
+            filename=os.path.join(upload_path, data_from['url'])
+            ret=ce.load_from_file(filename,[])
+            data_from={**data_from,**ret['修改这里']['data_from']}
+        elif data_from['url'].startswith("结果://"):
+            ret=ce.get_excel_data(data_from,report_id,upload_path,ds_dict={},ret={})
+        else:
+            ret= asyncio.run( ce.load_from_url2(data_from,{},0,session['userid']) )
+        ds_dict={}
+        for k,v in ret.items():
+            if isinstance(v['data'],pd.DataFrame):
+                ds_dict[k]=v['data'].to_json(orient='split',force_ascii=False) #
+        return {
+                'data_from':data_from
+                ,"ds_dict":ds_dict
+                ,'df_arr':[ x for x in ds_dict ]
+                }
 
-@mg.route("/initDatafrom/", methods=['GET', 'POST'])
-@run_async
-async def initDatafrom():
-    data_from=request.json['data_from']        
-    if data_from['type']=="file":
-        upload_path=glb.user_report_upload_path(request.json['curr_report_id']  )
-        filename=os.path.join(upload_path, data_from['url'])
-        ret=ce.load_from_file(filename,[])
-        data_from={**data_from,**ret['修改这里']['data_from']}
-    else:
-        ret= await ce.load_from_url2(data_from,{},0,session['userid'])
-    return {
-            'data_from':data_from
-            ,"ds_dict":{k:v['data'] for (k,v) in ret.items()}
-            ,'df_arr':[ x for x in ret ]
-            }
-if glb.is_test:
     @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
-    @run_async
-    async def getOneDsDataHtmlTable():
+    def getOneDsDataHtmlTable():
         config_data=request.json['config_data']
-        df_arr,ds_dict= await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])        
+        df_arr,ds_dict= asyncio.run( load_one_data(config_data,request.json['curr_report_id'])        )
         return {
                 'config_data':config_data
                 ,"ds_dict":ds_dict
                 ,'df_arr':df_arr
                 }
 
-    async def load_one_data(config_data,data_from,param,curr_report_id):
+    async def load_one_data(config_data,curr_report_id):
         glb.redis.sadd("zb:executing",curr_report_id)
         try:
             ds_dict= await ce.load_all_data(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
@@ -105,59 +90,92 @@ if glb.is_test:
             glb.redis.srem("zb:executing",curr_report_id)
 
     @mg.route("/files_template_exec/<int:id>", methods=['GET', 'POST'])    
-    @run_async
-    async def files_template_exec(id):
+    def files_template_exec(id):
         ret_files=[]
         config_data=request.json['config_data']
         glb.redis.sadd("zb:executing",id)
         try:
-            ret_files,tpl_results,all_files=await ce.files_template_exec(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
-            return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results,"all_files":all_files})
+            ret_files,tpl_results,all_files,_=asyncio.run( ce.files_template_exec(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER']))
+            return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,
+            "tpl_results":tpl_results,"all_files":all_files,
+            "config_data":config_data
+            })
         finally:
             glb.redis.srem("zb:executing",id)
 else:
-    @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
-    @run_async
-    async def getOneDsDataHtmlTable():
-        config_data=request.json['config_data']
-        df_arr,ds_dict= await load_one_data(config_data,request.json['cur_config'],request.json.get('param'),request.json['curr_report_id'])        
+    @mg.route("/initDatafrom/", methods=['GET', 'POST'])
+    def initDatafrom():
+        data_from=request.json['data_from']    
+        report_id=request.json['curr_report_id']  
+
+        async_result= hnclic.tasks.initDatafrom.delay(data_from,report_id,session['userid']) 
+        while not async_result.ready():
+            asyncio.run( asyncio.sleep(0.1))
+        if async_result.status=='FAILURE':
+            raise RuntimeError(async_result.traceback.replace('\n','<br>\n'))
+
+        df_arr,ds_dict,data_from=async_result.result
+        if isinstance( df_arr , str):
+            raise RuntimeError( df_arr)
         return {
-                'config_data':config_data
+                'data_from':data_from
                 ,"ds_dict":ds_dict
                 ,'df_arr':df_arr
                 }
 
-    async def load_one_data(config_data,data_from,param,curr_report_id):
+    @mg.route("/getOneDsDataHtmlTable/", methods=['GET', 'POST'])
+    def getOneDsDataHtmlTable():
+        config_data=request.json['config_data']
+        df_arr,ds_dict,ret_config_data= asyncio.run( load_one_data(config_data,request.json['curr_report_id']) )
+
+        return {
+                'config_data':ret_config_data
+                ,"ds_dict":ds_dict
+                ,'df_arr':df_arr
+                }
+
+    async def load_one_data(config_data,curr_report_id):
         glb.redis.sadd("zb:executing",curr_report_id)
         try:
             async_result= hnclic.tasks.load_all_data.delay(config_data,curr_report_id,upload_path=glb.user_report_upload_path(curr_report_id),userid=session['userid'])
-            # _,ds_dict,ret_config_data=await async_result.get()
             while not async_result.ready():
                 await asyncio.sleep(0.1)
             if async_result.status=='FAILURE':
                 raise RuntimeError(async_result.traceback.replace('\n','<br>\n'))            
             
             df_arr,ds_dict,ret_config_data= async_result.result
-            config_data.update(ret_config_data)            
-            return df_arr,ds_dict
+            config_data.update(ret_config_data)
+            if isinstance( df_arr , str):
+                raise RuntimeError( df_arr)
+            return df_arr,ds_dict,ret_config_data
         finally:
             glb.redis.srem("zb:executing",curr_report_id)
 
     @mg.route("/files_template_exec/<int:id>", methods=['GET', 'POST'])
-    @run_async
-    async def files_template_exec(id):
+    def files_template_exec(id):
         ret_files=[]
         config_data=request.json['config_data']
         glb.redis.sadd("zb:executing",id)
         try:
             task_result= hnclic.tasks.files_template_exec.delay(id,config_data,session['userid'] ,glb.config['UPLOAD_FOLDER'])
             while not task_result.ready():
-                await asyncio.sleep(0.1)
+                asyncio.run( asyncio.sleep(0.1))
             if task_result.status=='FAILURE':
-                raise RuntimeError(task_result.traceback.replace('\n','<br>\n'))            
+                raise RuntimeError(str(task_result.info).replace('\n','<br>\n'))            
             all_files=None
-            ret_files,tpl_results,all_files=task_result.result
-            return jsonify({"code":0,'message' :'成功生成','ret_files':ret_files,"tpl_results":tpl_results,"all_files":all_files})
+            if(len(task_result.result)==4):
+                ret_files,tpl_results,all_files,ret_config_data=task_result.result
+            else:
+                ret_files,tpl_results,all_files=task_result.result
+                
+            config_data.update(ret_config_data)
+            if isinstance( ret_files , str):
+                raise RuntimeError( ret_files)
+
+            return jsonify({"code":0,'message' :'成功生成',
+            'ret_files':ret_files,"tpl_results":tpl_results,
+            "all_files":all_files,"config_data":config_data
+            })
         finally:
             glb.redis.srem("zb:executing",id) 
 
@@ -263,12 +281,14 @@ def image_file(id,filename):
 
 @mg.route("/file/remove/<int:id>/<filename>",methods=['post'])
 def remove_file(id,filename):
-    import os
     file_path=glb.user_report_upload_path(id)
     file=os.path.join(file_path, filename)
     if os.path.realpath(file).startswith(file_path):
-        os.remove(file)
-        return {'errcode': 0, 'message': '删除成功'}
+        if os.path.exists(file):
+            os.remove(file)
+            return {'errcode': 0, 'message': '删除成功'}
+        else:
+            return {'errcode': 0, 'message': '文件不存在'}
     else:
         return {'errcode': 1, 'message': '非法删除'}
 
@@ -288,12 +308,12 @@ def getLoginGetDataTemplate():
         'login_tbl':login_tbl}
 
 @mg.route("/login_tbl/", methods=['POST'])
-@run_async
-async def login_tbl():
+def login_tbl():
     data=request.json
     data['userid']=session['userid']
-    di=DataInterface(None,session['userid'],glb.getSysRegister(data['sys_name']),data)
-    cookies,login_headers=await di.login_check()
+    sys_reg=glb.getSysRegister(data['sys_name'])
+    di=data_adapter.get({"type":data['sys_name']},data['userid'],{"username":data["username"],"password":data["password"]})
+    cookies,login_headers=asyncio.run( di.login_check())
     with glb.db_connect() as conn:
         with conn.cursor(as_dict=True) as cursor:
             cursor.execute(""" MERGE INTO [login_tbl] t 
@@ -480,8 +500,7 @@ def h5(name):
         return s
 
 @app.route("/api/raw/<int:id>/<rawtype>/<ds_names>")
-@run_async
-async def raw_get(id,rawtype,ds_names):
+def raw_get(id,rawtype,ds_names):
     glb.redis.hincrby("zb:tj",'api')
     ds_names=ds_names.split(',')
     cur=None
@@ -497,14 +516,15 @@ async def raw_get(id,rawtype,ds_names):
                                     user_input_form_data=user_input_form_data,
                                     upload_path=glb.user_report_upload_path(id),
                                     userid=glb.ini['user_login']['test_user'])
-    # _,ds_dict,ret_config_data=await async_result.get()
     while not async_result.ready():
-        await asyncio.sleep(0.1)
+        asyncio.run(asyncio.sleep(0.1))
     if async_result.status=='FAILURE':
         raise RuntimeError(async_result.traceback.replace('\n','<br>\n'))            
     
-    _,ds_dict,ret_config_data= async_result.result
-
+    df_arr,ds_dict,ret_config_data= async_result.result
+    if isinstance( df_arr , str):
+        raise RuntimeError( df_arr)
+    
     ret_dict=dict({key:value for key,value in ds_dict.items() if key in ds_names})
     rawtype=rawtype.split(":")
     ret_str='{"errcode":0,"message":"success",'
